@@ -10,6 +10,7 @@ const { getActionUrl, getSupportedFormats } = require('../lib/discovery');
 const {
 	copyDocument,
 	createDocumentByType,
+	createFolder,
 	deleteDocument,
 	getDocumentById,
 	listDocuments,
@@ -182,6 +183,9 @@ router.get('/files/:fileId', async function(req, res, next) {
 router.get('/files/:fileId/download', async function(req, res, next) {
 	try {
 		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		if (document.isDirectory) {
+			throw createHttpError(404, 'Folders cannot be downloaded.');
+		}
 		res.type(document.mimeType);
 		res.download(document.absolutePath, document.name);
 	} catch (error) {
@@ -193,6 +197,9 @@ router.get('/files/:fileId/launch', async function(req, res, next) {
 	try {
 		const requestedMode = normalizeEditorMode(req.query.mode || config.defaultEditorMode);
 		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		if (document.isDirectory) {
+			throw createHttpError(404, 'Folders cannot be opened.');
+		}
 		const launchPayload = await buildLaunchPayload(req, document, requestedMode);
 		res.json(launchPayload);
 	} catch (error) {
@@ -241,6 +248,30 @@ router.post('/files', async function(req, res, next) {
 		await invalidatePreview(config.documentRoot, document);
 		const launchPayload = await buildLaunchPayload(req, document, normalizeEditorMode(req.body.mode || 'edit'));
 		res.status(201).json(launchPayload);
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.post('/folders', async function(req, res, next) {
+	try {
+		if (!config.allowDocumentCreation) {
+			throw createHttpError(403, 'Folder creation is disabled.');
+		}
+
+		const user = getRequestUser(req);
+		const folder = await createFolder(config.documentRoot, {
+			directory: req.body.directory,
+			folderName: req.body.folderName
+		});
+		await appendActivity(config.documentRoot, {
+			type: 'create-folder',
+			fileId: folder.id,
+			fileName: folder.name,
+			userId: user.id,
+			userName: user.displayName
+		});
+		res.status(201).json({ folder: folder });
 	} catch (error) {
 		next(error);
 	}
@@ -308,6 +339,9 @@ router.delete('/files/:fileId', async function(req, res, next) {
 router.get('/files/:fileId/versions', async function(req, res, next) {
 	try {
 		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		if (document.isDirectory) {
+			throw createHttpError(404, 'Folders do not have version history.');
+		}
 		const versions = await listVersions(config.documentRoot, document);
 		res.json({ versions: versions });
 	} catch (error) {
@@ -319,6 +353,9 @@ router.post('/files/:fileId/versions/:versionId/restore', async function(req, re
 	try {
 		const user = getRequestUser(req);
 		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		if (document.isDirectory) {
+			throw createHttpError(404, 'Folders do not have version history.');
+		}
 		await restoreVersion(config.documentRoot, document, req.params.versionId, {
 			id: user.id,
 			name: user.displayName
@@ -414,6 +451,11 @@ router.get('/templates', async function(req, res, next) {
 
 router.post('/shares', async function(req, res, next) {
 	try {
+		const document = await getDocumentById(config.documentRoot, req.body.fileId);
+		if (document.isDirectory) {
+			throw createHttpError(400, 'Folders cannot be shared.');
+		}
+
 		const share = await createShare(config.documentRoot, {
 			fileId: req.body.fileId,
 			permission: req.body.permission

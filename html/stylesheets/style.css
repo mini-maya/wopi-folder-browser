@@ -367,6 +367,10 @@ tbody tr.selected-row {
   gap: 0.75rem;
 }
 
+.tree-row-main {
+  padding-left: calc(var(--tree-depth, 0) * 1.25rem);
+}
+
 .file-row-preview {
   width: 2.8rem;
   height: 2.2rem;
@@ -374,6 +378,44 @@ tbody tr.selected-row {
   border-radius: 8px;
   border: 1px solid var(--border-default);
   background: var(--surface-subtle);
+}
+
+.file-row-preview.folder-preview {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+}
+
+.tree-toggle {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-text);
+  flex: 0 0 auto;
+}
+
+.tree-toggle:hover {
+  background: var(--surface-subtle);
+  color: var(--text-main);
+}
+
+.tree-toggle-spacer {
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+}
+
+.entry-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.35rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--muted-text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .context-menu {
@@ -416,6 +458,72 @@ tbody tr.selected-row {
   height: 1px;
   background: var(--border-soft);
   margin: 0.35rem 0;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 38, 0.45);
+  z-index: 2000;
+}
+
+.modal-card {
+  width: min(28rem, 100%);
+  background: var(--panel-bg);
+  border: 1px solid var(--border-default);
+  border-radius: 18px;
+  box-shadow: var(--panel-shadow);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.modal-header h3 {
+  margin: 0;
+}
+
+.modal-body {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.modal-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.modal-field span {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--muted-text);
+}
+
+.modal-field input,
+.modal-field select {
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  background: var(--panel-bg);
+  color: var(--text-main);
+  font: inherit;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .details-card {

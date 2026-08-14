@@ -40,6 +40,7 @@
          <button id="new-text-button" type="button">New text document</button>
          <button id="new-spreadsheet-button" type="button">New spreadsheet</button>
          <button id="new-presentation-button" type="button">New presentation</button>
+         <button id="new-folder-button" type="button" class="secondary">New folder</button>
          <button id="refresh-button" type="button" class="secondary">Refresh</button>
        </div>
      </div>
@@ -105,7 +106,29 @@
    <input name="access_token_ttl" value="" type="hidden" id="access-token-ttl">
  </form>
 
- <script src="javascripts/app.js"></script>
+ <div id="folder-picker-modal" class="modal hidden" aria-hidden="true">
+   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="folder-picker-title">
+     <div class="modal-header">
+       <h3 id="folder-picker-title">Choose target folder</h3>
+       <button id="folder-picker-cancel" type="button" class="secondary">Cancel</button>
+     </div>
+     <form id="folder-picker-form" class="modal-body">
+       <label class="modal-field">
+         <span>Target folder</span>
+         <select id="folder-picker-target"></select>
+       </label>
+       <label class="modal-field">
+         <span>Name</span>
+         <input id="folder-picker-name" type="text" autocomplete="off">
+       </label>
+       <div class="modal-actions">
+         <button type="submit" id="folder-picker-confirm">Continue</button>
+       </div>
+     </form>
+   </div>
+ </div>
+
+ <script type="module" src="javascripts/app.js"></script>
 
 </body>
 
