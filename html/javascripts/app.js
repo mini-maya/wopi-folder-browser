@@ -193,13 +193,18 @@ function submitLaunchPayload(payload) {
 	elements.accessTokenTtl.value = String(payload.accessTokenTtl);
 	elements.viewerTitle.textContent = `${payload.file.name} (${payload.mode})`;
 	elements.viewerSubtitle.textContent = payload.file.relativePath;
-	enterEditorFullscreen();
+	setViewerMode(payload.mode);
 	elements.collaboraForm.requestSubmit();
 }
 
-function enterEditorFullscreen() {
-	document.body.classList.add('editor-fullscreen');
+function setViewerMode(mode) {
+	const isFullscreenMode = mode === 'edit';
+	document.body.classList.toggle('editor-fullscreen', isFullscreenMode);
 	elements.closeViewerButton.classList.remove('hidden');
+}
+
+function enterEditorFullscreen() {
+	setViewerMode('edit');
 }
 
 async function closeViewer() {

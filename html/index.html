@@ -10,6 +10,20 @@
 
 <body>
  <div class="layout">
+   <section class="viewer panel">
+     <div class="viewer-header">
+       <div>
+         <h2 id="viewer-title">No document opened yet</h2>
+         <p id="viewer-subtitle">Choose a file from the list to open it in Collabora.</p>
+       </div>
+       <button id="close-viewer-button" type="button" class="secondary hidden" aria-label="Close document">Close</button>
+     </div>
+
+     <div class="viewer-frame-wrapper">
+       <iframe id="collabora-online-viewer" name="collabora-online-viewer" allow="clipboard-read *; clipboard-write *"></iframe>
+     </div>
+   </section>
+
    <section class="sidebar panel">
      <div class="heading">
        <div>
@@ -66,20 +80,6 @@
          </thead>
          <tbody id="documents-body"></tbody>
        </table>
-     </div>
-   </section>
-
-   <section class="viewer panel">
-     <div class="viewer-header">
-       <div>
-         <h2 id="viewer-title">No document opened yet</h2>
-         <p id="viewer-subtitle">Choose a file from the list to open it in Collabora.</p>
-       </div>
-       <button id="close-viewer-button" type="button" class="secondary hidden" aria-label="Close document">Close</button>
-     </div>
-
-     <div class="viewer-frame-wrapper">
-       <iframe id="collabora-online-viewer" name="collabora-online-viewer" allow="clipboard-read *; clipboard-write *"></iframe>
      </div>
    </section>
  </div>
