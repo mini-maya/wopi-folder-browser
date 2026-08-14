@@ -1,0 +1,28 @@
+services:
+  app:
+    build:
+      context: .
+    environment:
+      PORT: 3000
+      DOCUMENT_ROOT: /documents
+      APP_BASE_URL: http://app:3000
+      COLLABORA_INTERNAL_URL: http://collabora:9980
+      COLLABORA_PUBLIC_URL: http://localhost:9980
+      ACCESS_TOKEN_SECRET: change-me-for-real-usage
+      MAX_DOCUMENT_SIZE: 100mb
+    ports:
+      - "3000:3000"
+    volumes:
+      - ${DOCUMENTS_HOST_PATH:-./example-documents}:/documents
+    depends_on:
+      - collabora
+
+  collabora:
+    image: collabora/code:latest
+    environment:
+      aliasgroup1: http://app:3000
+      extra_params: --o:ssl.enable=false --o:ssl.termination=false --o:welcome.enable=false
+      username: admin
+      password: adminadmin
+    ports:
+      - "9980:9980"

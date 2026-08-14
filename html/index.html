@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1">
+ <title>WOPI Folder Browser</title>
+ <link rel="stylesheet" href="stylesheets/style.css">
+</head>
+
+<body>
+ <div class="layout">
+   <section class="sidebar panel">
+     <div class="heading">
+       <div>
+         <p class="eyebrow">Collabora WOPI Host</p>
+         <h1>Folder Browser</h1>
+       </div>
+       <div class="heading-actions">
+         <label class="theme-label" for="theme-select">Theme</label>
+         <select id="theme-select" aria-label="Theme">
+           <option value="auto">Auto</option>
+           <option value="light">Light</option>
+           <option value="dark">Dark</option>
+         </select>
+         <button id="new-text-button" type="button">New text document</button>
+         <button id="new-spreadsheet-button" type="button">New spreadsheet</button>
+         <button id="new-presentation-button" type="button">New presentation</button>
+         <button id="refresh-button" type="button" class="secondary">Refresh</button>
+       </div>
+     </div>
+
+     <p class="intro">
+       The app lists supported files from the mounted document folder and opens the selected file in the Collabora CODE container.
+     </p>
+
+     <dl class="details">
+       <div>
+         <dt>Documents</dt>
+         <dd id="document-root">Loading...</dd>
+       </div>
+       <div>
+         <dt>App URL</dt>
+         <dd id="app-base-url">Loading...</dd>
+       </div>
+       <div>
+         <dt>Collabora</dt>
+         <dd id="collabora-url">Loading...</dd>
+       </div>
+     </dl>
+
+     <div id="status-message" class="status">Loading documents...</div>
+     <label for="search-input" class="search-label">Search documents</label>
+     <input id="search-input" class="search-input" type="search" placeholder="Search by name, path or MIME type">
+
+     <div class="table-wrapper">
+       <table>
+         <thead>
+           <tr>
+             <th>Name</th>
+             <th>Path</th>
+             <th>Modified</th>
+             <th>Size</th>
+             <th>Actions</th>
+           </tr>
+         </thead>
+         <tbody id="documents-body"></tbody>
+       </table>
+     </div>
+   </section>
+
+   <section class="viewer panel">
+     <div class="viewer-header">
+       <div>
+         <h2 id="viewer-title">No document opened yet</h2>
+         <p id="viewer-subtitle">Choose a file from the list to open it in Collabora.</p>
+       </div>
+       <button id="close-viewer-button" type="button" class="secondary hidden" aria-label="Close document">Close</button>
+     </div>
+
+     <div class="viewer-frame-wrapper">
+       <iframe id="collabora-online-viewer" name="collabora-online-viewer" allow="clipboard-read *; clipboard-write *"></iframe>
+     </div>
+   </section>
+ </div>
+
+ <form action="" enctype="multipart/form-data" method="post" target="collabora-online-viewer" id="collabora-submit-form" class="hidden">
+   <input name="access_token" value="" type="hidden" id="access-token">
+   <input name="access_token_ttl" value="" type="hidden" id="access-token-ttl">
+ </form>
+
+ <script src="javascripts/app.js"></script>
+
+</body>
+
+</html>

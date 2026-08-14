@@ -1,0 +1,45 @@
+services:
+  app:
+    build:
+      context: .
+    environment:
+      PORT: 3000
+      DOCUMENT_ROOT: /documents
+      APP_BASE_URL: https://office.lan
+      COLLABORA_INTERNAL_URL: https://collabora.lan
+      COLLABORA_PUBLIC_URL: https://collabora.lan
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:?set ACCESS_TOKEN_SECRET}
+      MAX_DOCUMENT_SIZE: 100mb
+      NODE_EXTRA_CA_CERTS: /run/certs/collabora-ca.crt
+    expose:
+      - "3000"
+    volumes:
+      - ${DOCUMENTS_HOST_PATH:?set DOCUMENTS_HOST_PATH}:/documents
+      - ${COLLABORA_CA_CERT_PATH:?set COLLABORA_CA_CERT_PATH}:/run/certs/collabora-ca.crt:ro
+    restart: unless-stopped
+    networks:
+      - backend
+      - proxy
+
+  collabora:
+    image: collabora/code:latest
+    environment:
+      aliasgroup1: https://office\\.lan
+      extra_params: >-
+        --o:ssl.enable=false
+        --o:ssl.termination=true
+        --o:welcome.enable=false
+        --o:server_name=collabora.lan
+      username: ${COLLABORA_ADMIN_USER:-admin}
+      password: ${COLLABORA_ADMIN_PASSWORD:?set COLLABORA_ADMIN_PASSWORD}
+    expose:
+      - "9980"
+    restart: unless-stopped
+    networks:
+      - proxy
+
+networks:
+  backend:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-proxy}
