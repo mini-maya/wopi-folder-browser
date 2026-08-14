@@ -2,6 +2,12 @@
 
 This project is a small WOPI host for Collabora Online CODE. It lists Office files from a mounted folder, opens them in Collabora, and writes saves back into the same folder.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshot_dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="screenshot_light.png">
+  <img alt="Screenshot" src="screenshot_light.png">
+</picture>
+
 ## Features
 
 - reads supported Office files from a local or mounted folder
