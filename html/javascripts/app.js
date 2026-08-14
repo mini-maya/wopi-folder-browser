@@ -44,7 +44,9 @@ const appState = {
 	selectedFileIds: new Set(),
 	expandedFolderIds: new Set(),
 	folderPickerAction: null,
-	folderPickerFileId: null
+	folderPickerFileId: null,
+	contextMenuFileId: null,
+	newDocumentMenuOpen: false
 };
 
 const DEFAULT_VIEWER_TITLE = 'No document opened yet';
@@ -240,7 +242,7 @@ function renderDocumentRow(document, depth) {
 				<input type="checkbox" class="file-select-checkbox" data-file-id="${document.id}" ${isSelected ? 'checked' : ''} aria-label="Select ${escapeHtml(document.name)}">
 			</td>
 			<td class="tree-name-cell">
-				<div class="file-row-main tree-row-main" style="--tree-depth:${depth}">
+				<div class="file-row-main tree-row-main" style="padding-left: ${depth * 1.25}rem">
 					${isFolder ? `<button type="button" class="tree-toggle" data-action="toggle-folder" data-file-id="${document.id}" aria-label="${toggleLabel}" aria-expanded="${isExpanded ? 'true' : 'false'}">${isExpanded ? '▾' : '▸'}</button>` : '<span class="tree-toggle-spacer" aria-hidden="true"></span>'}
 					<img class="file-row-preview ${isFolder ? 'folder-preview' : ''}" src="${previewUrl}" alt="${escapeHtml(document.name)} preview">
 					<div>
@@ -668,12 +670,20 @@ async function openDocument(fileId, mode) {
 }
 
 async function createDocument(type) {
+	return createDocumentInDirectory(type, '');
+}
+
+async function createDocumentInDirectory(type, directory) {
 	setStatus(`Creating ${type} document...`);
 	try {
 		const payload = await requestJson('/api/files', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ type: type, mode: 'edit' })
+			body: JSON.stringify({
+				type: type,
+				directory: directory || undefined,
+				mode: 'edit'
+			})
 		});
 		submitLaunchPayload(payload);
 		setStatus(`Created and opened ${payload.file.name}.`);
@@ -684,17 +694,24 @@ async function createDocument(type) {
 }
 
 async function createFolder() {
+	return createFolderInDirectory('');
+}
+
+async function createFolderInDirectory(directory) {
+	setStatus('Creating folder...');
 	const folderName = window.prompt('Folder name:');
 	if (!folderName) {
 		return;
 	}
 
-	setStatus('Creating folder...');
 	try {
 		await requestJson('/api/folders', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ folderName: folderName })
+			body: JSON.stringify({
+				directory: directory || undefined,
+				folderName: folderName
+			})
 		});
 		await loadPage();
 		setStatus('Folder created.');
@@ -887,6 +904,8 @@ async function showContextMenu(fileId, button) {
 		return;
 	}
 	closeOpenContextMenu();
+	appState.contextMenuFileId = fileId;
+	appState.newDocumentMenuOpen = false;
 	const isFolder = isFolderEntry(documentEntry);
 	const menu = document.createElement('div');
 	menu.className = 'context-menu';
@@ -894,6 +913,13 @@ async function showContextMenu(fileId, button) {
 		<button type="button" data-context-action="details" data-file-id="${documentEntry.id}">Details</button>
 		${isFolder ? '' : `<button type="button" data-context-action="favorite" data-file-id="${documentEntry.id}">${documentEntry.favorite ? 'Remove from favorites' : 'Add to favorites'}</button>
 		<button type="button" data-context-action="view" data-file-id="${documentEntry.id}">Preview (View)</button>`}
+		${isFolder ? `<button type="button" data-context-action="new-document" data-file-id="${documentEntry.id}" class="has-submenu">New document...</button>
+		<div class="context-menu-submenu hidden" data-submenu="new-document" aria-label="New document submenu">
+			<button type="button" data-context-action="new-text" data-file-id="${documentEntry.id}">New text document</button>
+			<button type="button" data-context-action="new-spreadsheet" data-file-id="${documentEntry.id}">New spreadsheet</button>
+			<button type="button" data-context-action="new-presentation" data-file-id="${documentEntry.id}">New presentation</button>
+			<button type="button" data-context-action="new-folder" data-file-id="${documentEntry.id}">New folder</button>
+		</div>` : ''}
 		<button type="button" data-context-action="rename" data-file-id="${documentEntry.id}">Rename</button>
 		<button type="button" data-context-action="move" data-file-id="${documentEntry.id}">Move to...</button>
 		<button type="button" data-context-action="copy" data-file-id="${documentEntry.id}">Copy to...</button>
@@ -906,6 +932,10 @@ async function showContextMenu(fileId, button) {
 		menuButton.addEventListener('click', function(event) {
 			event.preventDefault();
 			event.stopPropagation();
+			if (menuButton.dataset.contextAction === 'new-document') {
+				toggleNewDocumentSubmenu(menu);
+				return;
+			}
 			closeOpenContextMenu();
 			handleContextMenuAction(menuButton.dataset.contextAction, fileId);
 		});
@@ -927,18 +957,59 @@ function closeOpenContextMenu() {
 	if (existingMenu) {
 		existingMenu.remove();
 	}
+	const existingSubmenu = document.querySelector('.context-menu-submenu');
+	if (existingSubmenu) {
+		existingSubmenu.remove();
+	}
 	for (const menuButton of document.querySelectorAll('.menu-button[aria-expanded="true"]')) {
 		menuButton.setAttribute('aria-expanded', 'false');
 	}
+	appState.contextMenuFileId = null;
+	appState.newDocumentMenuOpen = false;
+}
+
+function toggleNewDocumentSubmenu(menu) {
+	const submenu = menu.querySelector('[data-submenu="new-document"]');
+	if (!submenu) {
+		return;
+	}
+
+	const isOpen = !submenu.classList.contains('hidden');
+	submenu.classList.toggle('hidden', isOpen);
+	appState.newDocumentMenuOpen = !isOpen;
 }
 
 async function handleContextMenuAction(action, fileId) {
+	const documentEntry = getDocumentById(fileId);
+	if (!documentEntry) {
+		return;
+	}
+
 	if (action === 'favorite') {
 		await handleFileAction('favorite', fileId);
 		return;
 	}
 	if (action === 'details') {
 		openDetailsPanel(fileId);
+		return;
+	}
+	if (action === 'new-document') {
+		return;
+	}
+	if (action === 'new-text') {
+		await createDocumentInDirectory('text', documentEntry.relativePath);
+		return;
+	}
+	if (action === 'new-spreadsheet') {
+		await createDocumentInDirectory('spreadsheet', documentEntry.relativePath);
+		return;
+	}
+	if (action === 'new-presentation') {
+		await createDocumentInDirectory('presentation', documentEntry.relativePath);
+		return;
+	}
+	if (action === 'new-folder') {
+		await createFolderInDirectory(documentEntry.relativePath);
 		return;
 	}
 	if (action === 'view') {

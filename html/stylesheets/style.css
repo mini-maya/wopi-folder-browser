@@ -368,7 +368,7 @@ tbody tr.selected-row {
 }
 
 .tree-row-main {
-  padding-left: calc(var(--tree-depth, 0) * 1.25rem);
+  min-width: 0;
 }
 
 .file-row-preview {
@@ -452,6 +452,22 @@ tbody tr.selected-row {
 
 .context-menu .danger:hover {
   background: var(--danger-hover);
+}
+
+.context-menu .has-submenu {
+  position: relative;
+}
+
+.context-menu-submenu {
+  margin: 0.25rem 0 0.25rem 0.75rem;
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--border-soft);
+  display: grid;
+  gap: 0.25rem;
+}
+
+.context-menu-submenu.hidden {
+  display: none;
 }
 
 .context-menu-separator {

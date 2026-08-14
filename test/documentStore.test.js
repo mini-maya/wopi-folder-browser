@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 
 const {
 	copyDocument,
+	createDocument,
 	createLegacyFileId,
 	createFolder,
 	deleteDocument,
@@ -77,6 +78,21 @@ test('copyDocument creates a new independent file id', async function() {
 
 	assert.notEqual(copiedDocument.id, originalDocument.id);
 	assert.equal(copiedDocument.relativePath, 'report copy.odt');
+});
+
+test('createDocument can target a folder path', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await fs.mkdir(path.join(tempRoot, 'archive'), { recursive: true });
+
+	const document = await createDocument(tempRoot, {
+		directory: 'archive',
+		fileName: 'inside.odt',
+		content: 'inside'
+	});
+
+	assert.equal(document.relativePath, 'archive/inside.odt');
+	const listedDocuments = await listDocuments(tempRoot);
+	assert.ok(listedDocuments.some((entry) => entry.relativePath === 'archive/inside.odt'));
 });
 
 test('createFolder and folder moves keep descendants stable', async function() {
