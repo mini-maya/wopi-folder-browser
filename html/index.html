@@ -67,10 +67,26 @@
      <label for="search-input" class="search-label">Search documents</label>
      <input id="search-input" class="search-input" type="search" placeholder="Search by name, path or MIME type">
 
+     <div id="bulk-actions" class="bulk-actions hidden">
+       <span id="selection-summary">0 selected</span>
+       <button id="bulk-delete-button" type="button" class="danger">Delete selected</button>
+     </div>
+
+     <aside id="details-panel" class="details-panel hidden" aria-live="polite">
+       <div class="details-panel-header">
+         <h3>Document details</h3>
+         <button id="close-details-panel-button" type="button" class="secondary" aria-label="Close details panel">Close</button>
+       </div>
+       <div id="details-panel-content" class="details-panel-content"></div>
+     </aside>
+
      <div class="table-wrapper">
        <table>
          <thead>
            <tr>
+             <th class="select-header-cell">
+               <input id="select-all-files" type="checkbox" aria-label="Select all files">
+             </th>
              <th>Name</th>
              <th>Path</th>
              <th>Modified</th>
