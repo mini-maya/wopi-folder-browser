@@ -45,7 +45,7 @@ Additional extensions can be added in `lib/documentStore.js`.
 ## Quick start with Docker Compose
 
 1. Optionally create a document folder on your host and place a few Office files inside it.
-2. Set `DOCUMENTS_HOST_PATH` if you do not want to use the bundled `example-documents` folder.
+2. Set `DOCUMENTS_HOST_PATH` if you do not want to use the bundled `example-documents` folder. Optionally set `WOPI_STATE_ROOT` to move the app state (`.wopi-state`) into a dedicated host folder or Docker volume.
 3. Start the stack:
 
    ```sh
@@ -65,10 +65,26 @@ The Compose file already wires the important variables:
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `DOCUMENTS_HOST_PATH` | Host folder mounted into the app container | `./example-documents` |
+| `WOPI_STATE_ROOT` | Dedicated folder for persistent runtime state; defaults to `<DOCUMENT_ROOT>/.wopi-state` | `<DOCUMENT_ROOT>/.wopi-state` |
 | `APP_BASE_URL` | Collabora-reachable base URL used for `WOPISrc` callbacks | `http://app:3000` |
 | `COLLABORA_INTERNAL_URL` | URL used by the app container to fetch discovery | `http://collabora:9980` |
 | `COLLABORA_PUBLIC_URL` | Browser-visible Collabora URL used inside the iframe | `http://localhost:9980` |
 | `ACCESS_TOKEN_SECRET` | Secret used to sign WOPI access tokens | `change-me-for-real-usage` |
+
+`WOPI_STATE_ROOT` is the key setting that moves the hidden `.wopi-state` directory out of the documents tree. In Docker Compose it is usually mounted separately, for example:
+
+```yaml
+services:
+  app:
+    environment:
+      DOCUMENT_ROOT: /documents
+      WOPI_STATE_ROOT: /var/lib/wopi-state
+    volumes:
+      - ${DOCUMENTS_HOST_PATH:-./example-documents}:/documents
+      - ${WOPI_STATE_ROOT:-./wopi-state}:/var/lib/wopi-state
+```
+
+This keeps the document volume clean while preserving the app's registry, locks, and cache data in a dedicated Docker volume or host folder.
 | `MAX_DOCUMENT_SIZE` | Raw upload limit for `PutFile` | `100mb` |
 | `TEMPLATE_ROOT` | Template root folder for personal/group/global/admin templates | `<DOCUMENT_ROOT>/.templates` |
 | `DEFAULT_EDITOR_MODE` | Launch mode for Open action (`edit`/`view`) | `edit` |

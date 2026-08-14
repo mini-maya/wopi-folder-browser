@@ -5,6 +5,7 @@ services:
     environment:
       PORT: 3000
       DOCUMENT_ROOT: /documents
+      WOPI_STATE_ROOT: /var/lib/wopi-state
       APP_BASE_URL: http://app:3000
       COLLABORA_INTERNAL_URL: http://collabora:9980
       COLLABORA_PUBLIC_URL: http://localhost:9980
@@ -14,6 +15,7 @@ services:
       - "3000:3000"
     volumes:
       - ${DOCUMENTS_HOST_PATH:-./example-documents}:/documents
+      - ${WOPI_STATE_ROOT:-./wopi-state}:/var/lib/wopi-state
     depends_on:
       - collabora
 

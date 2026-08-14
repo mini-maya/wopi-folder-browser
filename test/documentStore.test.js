@@ -16,6 +16,7 @@ const {
 	listDocuments,
 	renameOrMoveDocument
 } = require('../lib/documentStore');
+const { getStateRoot } = require('../lib/statePaths');
 
 test('listDocuments returns folders and supported files recursively', async function() {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
@@ -156,4 +157,37 @@ test('deleteDocument removes folders recursively', async function() {
 
 	const afterDelete = await listDocuments(tempRoot);
 	assert.deepEqual(afterDelete, []);
+});
+
+test('getStateRoot uses a dedicated state directory when configured', function() {
+	const tempRoot = path.join(os.tmpdir(), 'wopi-folder-browser-state-root-test');
+	const customStateRoot = path.join(tempRoot, 'state-root');
+	const previousValue = process.env.WOPI_STATE_ROOT;
+	process.env.WOPI_STATE_ROOT = customStateRoot;
+
+	try {
+		assert.equal(getStateRoot(tempRoot), customStateRoot);
+	} finally {
+		if (previousValue === undefined) {
+			delete process.env.WOPI_STATE_ROOT;
+		} else {
+			process.env.WOPI_STATE_ROOT = previousValue;
+		}
+	}
+});
+
+test('getStateRoot falls back to the document root .wopi-state directory', function() {
+	const tempRoot = path.join(os.tmpdir(), 'wopi-folder-browser-state-fallback-test');
+	const previousValue = process.env.WOPI_STATE_ROOT;
+	delete process.env.WOPI_STATE_ROOT;
+
+	try {
+		assert.equal(getStateRoot(tempRoot), path.join(tempRoot, '.wopi-state'));
+	} finally {
+		if (previousValue === undefined) {
+			delete process.env.WOPI_STATE_ROOT;
+		} else {
+			process.env.WOPI_STATE_ROOT = previousValue;
+		}
+	}
 });
