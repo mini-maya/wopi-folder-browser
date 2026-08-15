@@ -592,7 +592,7 @@ async function renderVersionList(fileId) {
 							<div class="version-item">
 								<div class="version-thumb"><img src="${getPreviewImage(document)}" alt="Version preview"></div>
 								<div class="version-body">
-									<h4>${isCurrent ? 'Current version' : `Version ${index + 1}`}</h4>
+									<h4>${isCurrent ? 'Current version' : `Version ${index + 1}`}${version.label ? ` — ${escapeHtml(version.label)}` : ''}</h4>
 									<small>${escapeHtml(version.createdBy?.name ?? 'shared-user')}</small>
 									<small>${formatDate(version.createdAt)} · ${formatBytes(version.size)}</small>
 								</div>
@@ -757,19 +757,36 @@ async function handleVersionAction(action, fileId, versionId) {
 	}
 	switch (action) {
 		case 'version-rename': {
-			const nextName = window.prompt('Rename this version (optional):');
+			const nextName = window.prompt('Rename this version:');
 			if (!nextName) {
 				return;
 			}
-			window.alert('Version rename is not yet available from the API sample; the current version metadata remains read-only in this UI.');
+			await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ label: nextName })
+			});
+			await renderVersionList(fileId);
 			return;
 		}
-		case 'version-name-current':
-			window.alert('Current version naming is not yet available from the API sample.');
+		case 'version-name-current': {
+			const nextName = window.prompt('Name the current version:');
+			if (!nextName) {
+				return;
+			}
+			await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ label: nextName })
+			});
+			await renderVersionList(fileId);
 			return;
-		case 'version-compare':
-			window.alert('Compare view is not yet available from the API sample.');
+		}
+		case 'version-compare': {
+			const payload = await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}/launch`);
+			submitLaunchPayload(payload);
 			return;
+		}
 		case 'version-restore':
 			await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}/restore`, { method: 'POST' });
 			await loadPage();
@@ -778,9 +795,14 @@ async function handleVersionAction(action, fileId, versionId) {
 		case 'version-download':
 			window.location.href = `/api/files/${encodeURIComponent(fileId)}/download?versionId=${encodeURIComponent(versionId)}`;
 			return;
-		case 'version-delete':
-			window.alert('Version deletion is not yet available from the API sample.');
+		case 'version-delete': {
+			if (!window.confirm('Delete this version? This cannot be undone.')) {
+				return;
+			}
+			await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}`, { method: 'DELETE' });
+			await renderVersionList(fileId);
 			return;
+		}
 		default:
 			return;
 	}

@@ -23,7 +23,7 @@ const { createShare, getShare } = require('../lib/shareStore');
 const { createDocumentFromTemplate, listTemplates } = require('../lib/templateStore');
 const { getRequestUser } = require('../lib/userContext');
 const { addRecent, loadUserState, setFavorite } = require('../lib/userStateStore');
-const { listVersions, restoreVersion } = require('../lib/versionStore');
+const { deleteVersion, getVersionEntry, listVersions, renameVersion, restoreVersion } = require('../lib/versionStore');
 const { invalidatePreview } = require('../lib/previewStore');
 
 const router = express.Router();
@@ -184,6 +184,17 @@ router.get('/files/:fileId', async function(req, res, next) {
 router.get('/files/:fileId/download', async function(req, res, next) {
 	try {
 		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+
+		if (req.query.versionId) {
+			if (document.isDirectory) {
+				throw createHttpError(400, 'Folders do not have versions.');
+			}
+			const { storagePath } = await getVersionEntry(config.documentRoot, req.params.fileId, req.query.versionId);
+			res.type(document.mimeType);
+			res.download(storagePath, document.name);
+			return;
+		}
+
 		if (document.isDirectory) {
 			const zipArtifact = await createFolderZip(document);
 			res
@@ -402,6 +413,89 @@ router.post('/files/:fileId/versions/:versionId/restore', async function(req, re
 			versionId: req.params.versionId
 		});
 		res.json({ file: updatedDocument });
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.patch('/files/:fileId/versions/:versionId', async function(req, res, next) {
+	try {
+		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		if (document.isDirectory) {
+			throw createHttpError(404, 'Folders do not have version history.');
+		}
+		const label = req.body.label != null ? String(req.body.label).trim() : null;
+		await renameVersion(config.documentRoot, req.params.fileId, req.params.versionId, label || null);
+		const versions = await listVersions(config.documentRoot, document);
+		res.json({ versions: versions });
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.delete('/files/:fileId/versions/:versionId', async function(req, res, next) {
+	try {
+		const user = getRequestUser(req);
+		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		if (document.isDirectory) {
+			throw createHttpError(404, 'Folders do not have version history.');
+		}
+		await deleteVersion(config.documentRoot, document, req.params.versionId);
+		await appendActivity(config.documentRoot, {
+			type: 'delete-version',
+			fileId: document.id,
+			fileName: document.name,
+			userId: user.id,
+			userName: user.displayName,
+			versionId: req.params.versionId
+		});
+		res.status(204).end();
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.get('/files/:fileId/versions/:versionId/launch', async function(req, res, next) {
+	try {
+		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		if (document.isDirectory) {
+			throw createHttpError(404, 'Folders do not have version history.');
+		}
+		await getVersionEntry(config.documentRoot, req.params.fileId, req.params.versionId);
+		const user = getRequestUser(req);
+		const actionUrl = await getActionUrl({
+			collaboraInternalUrl: config.collaboraInternalUrl,
+			collaboraPublicUrl: config.collaboraPublicUrl,
+			extension: document.extension,
+			mode: 'view'
+		});
+		const appBaseUrl = config.getAppBaseUrl(req);
+		const wopiSrc = `${appBaseUrl}/wopi/files/${encodeURIComponent(document.id)}`;
+		const launchUrl = appendQueryParameter(
+			appendQueryParameter(actionUrl, 'lang', req.query.lang || 'en-US'),
+			'WOPISrc',
+			wopiSrc
+		);
+		const accessToken = createAccessToken({
+			fileId: document.id,
+			secret: config.accessTokenSecret,
+			claims: {
+				userId: user.id,
+				userName: user.displayName,
+				canWrite: false,
+				canRename: false,
+				shareId: null,
+				versionId: req.params.versionId
+			}
+		});
+		res.json({
+			file: document,
+			mode: 'view',
+			versionId: req.params.versionId,
+			actionUrl: launchUrl,
+			accessToken: accessToken.token,
+			accessTokenTtl: accessToken.expiresAt
+		});
 	} catch (error) {
 		next(error);
 	}

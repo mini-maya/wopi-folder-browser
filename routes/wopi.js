@@ -11,7 +11,7 @@ const { createHttpError } = require('../lib/errors');
 const { clearLock, ensureLockMatches, getLock, setLock } = require('../lib/lockStore');
 const { invalidatePreview } = require('../lib/previewStore');
 const { getShare } = require('../lib/shareStore');
-const { createVersionSnapshot } = require('../lib/versionStore');
+const { createVersionSnapshot, getVersionEntry } = require('../lib/versionStore');
 
 const router = express.Router();
 
@@ -55,6 +55,27 @@ function getLockFromHeader(req) {
 router.get('/files/:fileId', async function(req, res, next) {
 	try {
 		const authorized = await loadAuthorizedDocument(req);
+
+		if (authorized.tokenPayload.versionId) {
+			const { entry } = await getVersionEntry(config.documentRoot, req.params.fileId, authorized.tokenPayload.versionId);
+			res.json({
+				BaseFileName: authorized.document.name,
+				OwnerId: 'shared-folder',
+				Size: entry.size,
+				UserId: authorized.tokenPayload.userId || 'shared-user',
+				UserFriendlyName: authorized.tokenPayload.userName || 'Shared Folder User',
+				UserCanWrite: false,
+				UserCanRename: false,
+				SupportsGetLock: false,
+				SupportsLocks: false,
+				SupportsUpdate: false,
+				SupportsRename: false,
+				Version: entry.id,
+				LastModifiedTime: entry.createdAt
+			});
+			return;
+		}
+
 		res.json({
 			BaseFileName: authorized.document.name,
 			OwnerId: 'shared-folder',
@@ -78,6 +99,15 @@ router.get('/files/:fileId', async function(req, res, next) {
 router.get('/files/:fileId/contents', async function(req, res, next) {
 	try {
 		const authorized = await loadAuthorizedDocument(req);
+
+		if (authorized.tokenPayload.versionId) {
+			const { entry, storagePath } = await getVersionEntry(config.documentRoot, req.params.fileId, authorized.tokenPayload.versionId);
+			res.type(authorized.document.mimeType);
+			res.set('X-WOPI-ItemVersion', entry.id);
+			res.sendFile(storagePath);
+			return;
+		}
+
 		res.type(authorized.document.mimeType);
 		res.set('X-WOPI-ItemVersion', authorized.document.version);
 		res.sendFile(authorized.document.absolutePath);
