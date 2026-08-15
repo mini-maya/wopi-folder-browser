@@ -560,7 +560,7 @@ router.get('/admin/diagnostics', async function(req, res, next) {
 router.get('/supported-formats', async function(req, res, next) {
 	try {
 		const discoveryExtensions = await getSupportedFormats(config.collaboraInternalUrl);
-		const staticallySupported = Object.keys(SUPPORTED_MIME_TYPES).sort();
+		const staticallySupported = Object.keys(SUPPORTED_MIME_TYPES).sort((a, b) => a.localeCompare(b));
 		res.json({
 			discoveryExtensions: discoveryExtensions,
 			staticExtensions: staticallySupported

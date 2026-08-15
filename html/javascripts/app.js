@@ -56,7 +56,7 @@ const THEME_MODES = new Set(['auto', 'light', 'dark']);
 const systemThemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
 function isFolderEntry(document) {
-	return Boolean(document && document.isDirectory);
+	return Boolean(document?.isDirectory);
 }
 
 function setStatus(message, isError = false) {
@@ -250,11 +250,31 @@ function buildFolderPictogramSvg(options) {
 		</svg>
 	`;
 	const useFavoriteIcon = Boolean(isFavorite && (preferFavoriteIcon || !isOpen));
-	const effectiveHasFiles = isOpen && isFavorite ? true : hasFiles;
-	const svg = useFavoriteIcon
-		? favoriteFolderSvg
-		: (isOpen ? (effectiveHasFiles ? openFolderWithFilesSvg : openFolderWithoutFilesSvg) : closedFolderSvg);
+	const effectiveHasFiles = isOpen && hasFiles;
+	let svg = closedFolderSvg;
+	if (useFavoriteIcon) {
+		svg = favoriteFolderSvg;
+	} else if (isOpen) {
+		svg = effectiveHasFiles ? openFolderWithFilesSvg : openFolderWithoutFilesSvg;
+	}
 	return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function getFileTypeKey(document) {
+	if (document.isDirectory) {
+		return 'folder';
+	}
+	const mimeType = document.mimeType || '';
+	if (mimeType.includes('spreadsheet')) {
+		return 'spreadsheet';
+	}
+	if (mimeType.includes('presentation')) {
+		return 'presentation';
+	}
+	if (mimeType.includes('text') || mimeType.includes('csv')) {
+		return 'text';
+	}
+	return 'default';
 }
 
 function buildFilePreviewSvg(document) {
@@ -265,11 +285,7 @@ function buildFilePreviewSvg(document) {
 		presentation: '#f59f00',
 		default: '#64748b'
 	};
-	const typeKey = document.isDirectory ? 'folder'
-	: document.mimeType && document.mimeType.includes('spreadsheet') ? 'spreadsheet'
-	: document.mimeType && document.mimeType.includes('presentation') ? 'presentation'
-	: document.mimeType && (document.mimeType.includes('text') || document.mimeType.includes('csv')) ? 'text'
-	: 'default';
+	const typeKey = getFileTypeKey(document);
 	const label = document.isDirectory
 		? 'FOLDER'
 		: (document.name ? document.name.split('.').pop() || 'FILE' : 'FILE').toUpperCase();
@@ -372,7 +388,7 @@ function wireDocumentRows() {
 			}
 
 			const document = getDocumentById(row.dataset.fileId);
-			if (document && document.isDirectory) {
+			if (document?.isDirectory) {
 				toggleFolderExpansion(document.id);
 				renderCurrentDocumentList();
 			}
@@ -523,7 +539,7 @@ async function renderVersionList(fileId) {
 								<div class="version-thumb"><img src="${getPreviewImage(document)}" alt="Version preview"></div>
 								<div class="version-body">
 									<h4>${isCurrent ? 'Current version' : `Version ${index + 1}`}</h4>
-									<small>${escapeHtml(version.createdBy && version.createdBy.name ? version.createdBy.name : 'shared-user')}</small>
+									<small>${escapeHtml(version.createdBy?.name ?? 'shared-user')}</small>
 									<small>${formatDate(version.createdAt)} · ${formatBytes(version.size)}</small>
 								</div>
 								<div class="version-actions">
@@ -555,70 +571,63 @@ async function renderVersionList(fileId) {
 
 async function handleDetailsAction(action, fileId) {
 	const document = getDocumentById(fileId);
-	if (action === 'details-toggle-favorite') {
-		await handleFileAction('favorite', fileId);
-		openDetailsPanel(fileId);
-		return;
-	}
-	if (action === 'details-view') {
-		if (isFolderEntry(document)) {
-			setStatus('Folders cannot be previewed.', true);
+	switch (action) {
+		case 'details-toggle-favorite':
+			await handleFileAction('favorite', fileId);
+			openDetailsPanel(fileId);
 			return;
-		}
-		await openDocument(fileId, 'view');
-		return;
-	}
-	if (action === 'details-open') {
-		if (isFolderEntry(document)) {
-			setStatus('Folders cannot be opened in Collabora.', true);
+		case 'details-view':
+			if (isFolderEntry(document)) {
+				setStatus('Folders cannot be previewed.', true);
+				return;
+			}
+			await openDocument(fileId, 'view');
 			return;
-		}
-		await openDocument(fileId, 'edit');
-		return;
-	}
-	if (action === 'details-share') {
-		if (isFolderEntry(document)) {
-			setStatus('Folders cannot be shared.', true);
+		case 'details-open':
+			if (isFolderEntry(document)) {
+				setStatus('Folders cannot be opened in Collabora.', true);
+				return;
+			}
+			await openDocument(fileId, 'edit');
 			return;
-		}
-		await createShare(fileId);
-		return;
-	}
-	if (action === 'details-rename') {
-		await renameDocument(fileId);
-		await loadPage();
-		openDetailsPanel(fileId);
-		return;
-	}
-	if (action === 'details-move') {
-		await openFolderTargetDialog('move', fileId);
-		return;
-	}
-	if (action === 'details-copy') {
-		await openFolderTargetDialog('copy', fileId);
-		return;
-	}
-	if (action === 'details-download') {
-		if (isFolderEntry(document)) {
-			setStatus('Folders cannot be downloaded.', true);
+		case 'details-share':
+			if (isFolderEntry(document)) {
+				setStatus('Folders cannot be shared.', true);
+				return;
+			}
+			await createShare(fileId);
 			return;
-		}
-		window.location.href = `/api/files/${encodeURIComponent(fileId)}/download`;
-		return;
-	}
-	if (action === 'details-delete') {
-		await deleteDocument(fileId);
-		await loadPage();
-		closeDetailsPanel();
-		return;
-	}
-	if (action === 'details-save-as') {
-		await saveAsDocument(fileId);
-		return;
-	}
-	if (action === 'details-versions') {
-		await renderVersionList(fileId);
-		return;
+		case 'details-rename':
+			await renameDocument(fileId);
+			await loadPage();
+			openDetailsPanel(fileId);
+			return;
+		case 'details-move':
+			await openFolderTargetDialog('move', fileId);
+			return;
+		case 'details-copy':
+			await openFolderTargetDialog('copy', fileId);
+			return;
+		case 'details-download':
+			if (isFolderEntry(document)) {
+				setStatus('Folders cannot be downloaded.', true);
+				return;
+			}
+			window.location.href = `/api/files/${encodeURIComponent(fileId)}/download`;
+			return;
+		case 'details-delete':
+			await deleteDocument(fileId);
+			await loadPage();
+			closeDetailsPanel();
+			return;
+		case 'details-save-as':
+			await saveAsDocument(fileId);
+			return;
+		case 'details-versions':
+			await renderVersionList(fileId);
+			return;
+		default:
+			return;
 	}
 }
 
@@ -626,35 +635,34 @@ async function handleVersionAction(action, fileId, versionId) {
 	if (!versionId) {
 		return;
 	}
-	if (action === 'version-rename') {
-		const nextName = window.prompt('Rename this version (optional):');
-		if (!nextName) {
+	switch (action) {
+		case 'version-rename': {
+			const nextName = window.prompt('Rename this version (optional):');
+			if (!nextName) {
+				return;
+			}
+			window.alert('Version rename is not yet available from the API sample; the current version metadata remains read-only in this UI.');
 			return;
 		}
-		window.alert('Version rename is not yet available from the API sample; the current version metadata remains read-only in this UI.');
-		return;
-	}
-	if (action === 'version-name-current') {
-		window.alert('Current version naming is not yet available from the API sample.');
-		return;
-	}
-	if (action === 'version-compare') {
-		window.alert('Compare view is not yet available from the API sample.');
-		return;
-	}
-	if (action === 'version-restore') {
-		await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}/restore`, { method: 'POST' });
-		await loadPage();
-		openDetailsPanel(fileId);
-		return;
-	}
-	if (action === 'version-download') {
-		window.location.href = `/api/files/${encodeURIComponent(fileId)}/download?versionId=${encodeURIComponent(versionId)}`;
-		return;
-	}
-	if (action === 'version-delete') {
-		window.alert('Version deletion is not yet available from the API sample.');
-		return;
+		case 'version-name-current':
+			window.alert('Current version naming is not yet available from the API sample.');
+			return;
+		case 'version-compare':
+			window.alert('Compare view is not yet available from the API sample.');
+			return;
+		case 'version-restore':
+			await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}/restore`, { method: 'POST' });
+			await loadPage();
+			openDetailsPanel(fileId);
+			return;
+		case 'version-download':
+			window.location.href = `/api/files/${encodeURIComponent(fileId)}/download?versionId=${encodeURIComponent(versionId)}`;
+			return;
+		case 'version-delete':
+			window.alert('Version deletion is not yet available from the API sample.');
+			return;
+		default:
+			return;
 	}
 }
 
@@ -669,7 +677,7 @@ async function requestJson(url, options = {}) {
 	}
 
 	if (!response.ok) {
-		const message = payload && payload.error ? payload.error : `Request failed with status ${response.status}.`;
+		const message = payload?.error ?? `Request failed with status ${response.status}.`;
 		throw new Error(message);
 	}
 
@@ -799,7 +807,7 @@ async function renameDocument(fileId, nextNameOverride) {
 	const promptLabel = isFolderEntry(document)
 		? 'New folder name:'
 		: 'New file name (with extension):';
-	const nextName = nextNameOverride || window.prompt(promptLabel, document ? document.name : '');
+	const nextName = nextNameOverride || window.prompt(promptLabel, document?.name ?? '');
 	if (!nextName) {
 		return;
 	}
@@ -812,7 +820,7 @@ async function renameDocument(fileId, nextNameOverride) {
 
 async function moveDocument(fileId, targetNameOverride, targetDirectoryOverride) {
 	const document = getDocumentById(fileId);
-	const targetName = targetNameOverride || window.prompt(isFolderEntry(document) ? 'Move folder as:' : 'Move name (with extension):', document ? document.name : '');
+	const targetName = targetNameOverride || window.prompt(isFolderEntry(document) ? 'Move folder as:' : 'Move name (with extension):', document?.name ?? '');
 	if (!targetName) {
 		return;
 	}
@@ -828,7 +836,7 @@ async function moveDocument(fileId, targetNameOverride, targetDirectoryOverride)
 
 async function copyDocument(fileId, targetNameOverride, targetDirectoryOverride) {
 	const document = getDocumentById(fileId);
-	const targetName = targetNameOverride || window.prompt(isFolderEntry(document) ? 'Copy folder as:' : 'Copy name (with extension):', document ? document.name : '');
+	const targetName = targetNameOverride || window.prompt(isFolderEntry(document) ? 'Copy folder as:' : 'Copy name (with extension):', document?.name ?? '');
 	if (!targetName) {
 		return;
 	}
@@ -856,11 +864,11 @@ function getFolderOptions() {
 function populateFolderPicker(document) {
 	const options = getFolderOptions();
 	elements.folderPickerTarget.innerHTML = options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('');
-	const preferredTarget = document && document.relativePath.includes('/')
+	const preferredTarget = document?.relativePath.includes('/')
 		? document.relativePath.slice(0, document.relativePath.lastIndexOf('/'))
 		: '';
 	elements.folderPickerTarget.value = options.some((option) => option.value === preferredTarget) ? preferredTarget : '';
-	elements.folderPickerName.value = document ? document.name : '';
+	elements.folderPickerName.value = document?.name ?? '';
 }
 
 function openFolderTargetDialog(action, fileId) {
@@ -913,7 +921,7 @@ async function submitFolderTargetDialog(event) {
 
 async function saveAsDocument(fileId) {
 	const document = getDocumentById(fileId);
-	const targetName = window.prompt('Save copy as (with extension):', document ? document.name : '');
+	const targetName = window.prompt('Save copy as (with extension):', document?.name ?? '');
 	if (!targetName) {
 		return;
 	}
@@ -1059,93 +1067,90 @@ async function handleContextMenuAction(action, fileId) {
 		return;
 	}
 
-	if (action === 'favorite') {
-		await handleFileAction('favorite', fileId);
-		return;
-	}
-	if (action === 'details') {
-		openDetailsPanel(fileId);
-		return;
-	}
-	if (action === 'new-document') {
-		return;
-	}
-	if (action === 'new-text') {
-		await createDocumentInDirectory('text', documentEntry.relativePath);
-		return;
-	}
-	if (action === 'new-spreadsheet') {
-		await createDocumentInDirectory('spreadsheet', documentEntry.relativePath);
-		return;
-	}
-	if (action === 'new-presentation') {
-		await createDocumentInDirectory('presentation', documentEntry.relativePath);
-		return;
-	}
-	if (action === 'new-folder') {
-		await createFolderInDirectory(documentEntry.relativePath);
-		return;
-	}
-	if (action === 'view') {
-		await openDocument(fileId, 'view');
-		return;
-	}
-	if (action === 'rename') {
-		await renameDocument(fileId);
-		await loadPage();
-		return;
-	}
-	if (action === 'move') {
-		await openFolderTargetDialog('move', fileId);
-		return;
-	}
-	if (action === 'copy') {
-		await openFolderTargetDialog('copy', fileId);
-		return;
-	}
-	if (action === 'save-as') {
-		await saveAsDocument(fileId);
-		return;
-	}
-	if (action === 'download') {
-		window.location.href = `/api/files/${encodeURIComponent(fileId)}/download`;
-		return;
-	}
-	if (action === 'delete') {
-		await deleteDocument(fileId);
-		await loadPage();
-		return;
+	switch (action) {
+		case 'favorite':
+			await handleFileAction('favorite', fileId);
+			return;
+		case 'details':
+			openDetailsPanel(fileId);
+			return;
+		case 'new-document':
+			return;
+		case 'new-text':
+			await createDocumentInDirectory('text', documentEntry.relativePath);
+			return;
+		case 'new-spreadsheet':
+			await createDocumentInDirectory('spreadsheet', documentEntry.relativePath);
+			return;
+		case 'new-presentation':
+			await createDocumentInDirectory('presentation', documentEntry.relativePath);
+			return;
+		case 'new-folder':
+			await createFolderInDirectory(documentEntry.relativePath);
+			return;
+		case 'view':
+			await openDocument(fileId, 'view');
+			return;
+		case 'rename':
+			await renameDocument(fileId);
+			await loadPage();
+			return;
+		case 'move':
+			await openFolderTargetDialog('move', fileId);
+			return;
+		case 'copy':
+			await openFolderTargetDialog('copy', fileId);
+			return;
+		case 'save-as':
+			await saveAsDocument(fileId);
+			return;
+		case 'download':
+			window.location.href = `/api/files/${encodeURIComponent(fileId)}/download`;
+			return;
+		case 'delete':
+			await deleteDocument(fileId);
+			await loadPage();
+			return;
+		default:
+			return;
 	}
 }
 
 async function handleFileAction(action, fileId, mode) {
 	try {
-		if (action === 'open') {
-			await openDocument(fileId, mode || 'edit');
-			return;
-		}
-		if (action === 'details') {
-			openDetailsPanel(fileId);
-			return;
-		}
-		if (action === 'download') {
-			window.location.href = `/api/files/${encodeURIComponent(fileId)}/download`;
-			return;
-		}
-		if (action === 'rename') {
-			await renameDocument(fileId);
-		} else if (action === 'copy') {
-			await openFolderTargetDialog('copy', fileId);
-		} else if (action === 'move') {
-			await openFolderTargetDialog('move', fileId);
-		} else if (action === 'delete') {
-			await deleteDocument(fileId);
-		} else if (action === 'favorite') {
-			await toggleFavorite(fileId);
-		} else if (action === 'versions') {
-			await showVersions(fileId);
-		} else if (action === 'share') {
-			await createShare(fileId);
+		switch (action) {
+			case 'open':
+				await openDocument(fileId, mode || 'edit');
+				return;
+			case 'details':
+				openDetailsPanel(fileId);
+				return;
+			case 'download':
+				window.location.href = `/api/files/${encodeURIComponent(fileId)}/download`;
+				return;
+			case 'rename':
+				await renameDocument(fileId);
+				break;
+			case 'copy':
+				await openFolderTargetDialog('copy', fileId);
+				break;
+			case 'move':
+				await openFolderTargetDialog('move', fileId);
+				break;
+			case 'delete':
+				await deleteDocument(fileId);
+				break;
+			case 'favorite':
+				await toggleFavorite(fileId);
+				break;
+			case 'versions':
+				await showVersions(fileId);
+				break;
+			case 'share':
+				await createShare(fileId);
+				break;
+			default:
+				return;
 		}
 
 		await loadPage();

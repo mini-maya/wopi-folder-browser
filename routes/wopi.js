@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const fs = require('fs/promises');
+const fs = require('node:fs/promises');
 
 const config = require('../lib/config');
 const { verifyAccessToken } = require('../lib/accessToken');
@@ -98,7 +98,7 @@ router.post('/files/:fileId', async function(req, res, next) {
 		const requestedLock = getLockFromHeader(req);
 		if (override === 'LOCK') {
 			const existingLock = getLock(req.params.fileId);
-			if (existingLock && existingLock.lock !== requestedLock) {
+			if (existingLock?.lock && existingLock.lock !== requestedLock) {
 				res.status(409).set('X-WOPI-Lock', existingLock.lock).end();
 				return;
 			}
@@ -110,7 +110,7 @@ router.post('/files/:fileId', async function(req, res, next) {
 		if (override === 'REFRESH_LOCK') {
 			if (!ensureLockMatches(req.params.fileId, requestedLock)) {
 				const existingLock = getLock(req.params.fileId);
-				res.status(409).set('X-WOPI-Lock', existingLock ? existingLock.lock : '').end();
+				res.status(409).set('X-WOPI-Lock', existingLock?.lock ?? '').end();
 				return;
 			}
 			setLock(req.params.fileId, requestedLock);
@@ -120,14 +120,14 @@ router.post('/files/:fileId', async function(req, res, next) {
 
 		if (override === 'GET_LOCK') {
 			const existingLock = getLock(req.params.fileId);
-			res.status(200).set('X-WOPI-Lock', existingLock ? existingLock.lock : '').end();
+			res.status(200).set('X-WOPI-Lock', existingLock?.lock ?? '').end();
 			return;
 		}
 
 		if (override === 'UNLOCK') {
 			if (!ensureLockMatches(req.params.fileId, requestedLock)) {
 				const existingLock = getLock(req.params.fileId);
-				res.status(409).set('X-WOPI-Lock', existingLock ? existingLock.lock : '').end();
+				res.status(409).set('X-WOPI-Lock', existingLock?.lock ?? '').end();
 				return;
 			}
 			clearLock(req.params.fileId);
@@ -175,7 +175,7 @@ router.post('/files/:fileId/contents', async function(req, res, next) {
 
 		if (!ensureLockMatches(req.params.fileId, getLockFromHeader(req))) {
 			const existingLock = getLock(req.params.fileId);
-			res.status(409).set('X-WOPI-Lock', existingLock ? existingLock.lock : '').end();
+			res.status(409).set('X-WOPI-Lock', existingLock?.lock ?? '').end();
 			return;
 		}
 
