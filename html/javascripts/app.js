@@ -18,10 +18,7 @@ const elements = {
 	bulkDeleteButton: document.querySelector('#bulk-delete-button'),
 	viewerFrame: document.querySelector('#collabora-online-viewer'),
 	refreshButton: document.querySelector('#refresh-button'),
-	newTextButton: document.querySelector('#new-text-button'),
-	newSpreadsheetButton: document.querySelector('#new-spreadsheet-button'),
-	newPresentationButton: document.querySelector('#new-presentation-button'),
-	newFolderButton: document.querySelector('#new-folder-button'),
+	newMenuButton: document.querySelector('#new-menu-button'),
 	themeSelect: document.querySelector('#theme-select'),
 	searchInput: document.querySelector('#search-input'),
 	collaboraForm: document.querySelector('#collabora-submit-form'),
@@ -122,7 +119,7 @@ function formatDate(isoDate) {
 	}).format(new Date(isoDate));
 }
 
-function renderEmptyState(message = 'No supported documents or folders found. Create one with the New buttons.') {
+function renderEmptyState(message = 'No supported documents or folders found. Create one with the New... menu.') {
 	elements.documentsBody.innerHTML = `
 		<tr>
 			<td colspan="6">
@@ -131,13 +128,14 @@ function renderEmptyState(message = 'No supported documents or folders found. Cr
 		</tr>
 	`;
 	elements.selectAllFiles.checked = false;
-	elements.bulkActions.classList.add('hidden');
+	updateBulkActionState([]);
 }
 
 function updateBulkActionState(documents) {
 	const selectedCount = appState.selectedFileIds.size;
 	elements.selectionSummary.textContent = `${selectedCount} selected`;
-	elements.bulkActions.classList.toggle('hidden', selectedCount === 0);
+	elements.selectionSummary.classList.toggle('hidden', selectedCount === 0);
+	elements.bulkDeleteButton.disabled = selectedCount === 0;
 	if (!documents || documents.length === 0) {
 		elements.selectAllFiles.checked = false;
 		return;
@@ -993,20 +991,21 @@ async function showContextMenu(fileId, button) {
 	menu.className = 'context-menu';
 	menu.innerHTML = `
 		<button type="button" data-context-action="details" data-file-id="${documentEntry.id}">Details</button>
-		${isFolder ? '' : `<button type="button" data-context-action="favorite" data-file-id="${documentEntry.id}">${documentEntry.favorite ? 'Remove from favorites' : 'Add to favorites'}</button>
-		<button type="button" data-context-action="view" data-file-id="${documentEntry.id}">Preview (View)</button>`}
-		${isFolder ? `<button type="button" data-context-action="new-document" data-file-id="${documentEntry.id}" class="has-submenu">New document...</button>
+		<button type="button" data-context-action="favorite" data-file-id="${documentEntry.id}">${documentEntry.favorite ? 'Remove from favorites' : 'Add to favorites'}</button>
+		${isFolder ? '' : `<button type="button" data-context-action="view" data-file-id="${documentEntry.id}">Preview (View)</button>`}
+		${isFolder ? `<button type="button" data-context-action="new-document" data-file-id="${documentEntry.id}" class="has-submenu">New...</button>
 		<div class="context-menu-submenu hidden" data-submenu="new-document" aria-label="New document submenu">
+			<button type="button" data-context-action="new-folder" data-file-id="${documentEntry.id}">New folder</button>
+			<div class="context-menu-separator"></div>
 			<button type="button" data-context-action="new-text" data-file-id="${documentEntry.id}">New text document</button>
 			<button type="button" data-context-action="new-spreadsheet" data-file-id="${documentEntry.id}">New spreadsheet</button>
 			<button type="button" data-context-action="new-presentation" data-file-id="${documentEntry.id}">New presentation</button>
-			<button type="button" data-context-action="new-folder" data-file-id="${documentEntry.id}">New folder</button>
 		</div>` : ''}
+		<button type="button" data-context-action="download" data-file-id="${documentEntry.id}">Download</button>
 		<button type="button" data-context-action="rename" data-file-id="${documentEntry.id}">Rename</button>
 		<button type="button" data-context-action="move" data-file-id="${documentEntry.id}">Move to...</button>
 		<button type="button" data-context-action="copy" data-file-id="${documentEntry.id}">Copy to...</button>
-		${isFolder ? '' : `<button type="button" data-context-action="save-as" data-file-id="${documentEntry.id}">Save as...</button>
-		<button type="button" data-context-action="download" data-file-id="${documentEntry.id}">Download</button>`}
+		${isFolder ? '' : `<button type="button" data-context-action="save-as" data-file-id="${documentEntry.id}">Save as...</button>`}
 		<div class="context-menu-separator"></div>
 		<button type="button" class="danger" data-context-action="delete" data-file-id="${documentEntry.id}">Delete ${isFolder ? 'folder' : 'file'}</button>
 	`;
@@ -1062,8 +1061,11 @@ function toggleNewDocumentSubmenu(menu) {
 }
 
 async function handleContextMenuAction(action, fileId) {
-	const documentEntry = getDocumentById(fileId);
-	if (!documentEntry) {
+	const documentEntry = fileId ? getDocumentById(fileId) : null;
+	if (fileId && !documentEntry) {
+		return;
+	}
+	if (!fileId && !String(action).startsWith('new-')) {
 		return;
 	}
 
@@ -1077,16 +1079,16 @@ async function handleContextMenuAction(action, fileId) {
 		case 'new-document':
 			return;
 		case 'new-text':
-			await createDocumentInDirectory('text', documentEntry.relativePath);
+			await createDocumentInDirectory('text', documentEntry?.relativePath || '');
 			return;
 		case 'new-spreadsheet':
-			await createDocumentInDirectory('spreadsheet', documentEntry.relativePath);
+			await createDocumentInDirectory('spreadsheet', documentEntry?.relativePath || '');
 			return;
 		case 'new-presentation':
-			await createDocumentInDirectory('presentation', documentEntry.relativePath);
+			await createDocumentInDirectory('presentation', documentEntry?.relativePath || '');
 			return;
 		case 'new-folder':
-			await createFolderInDirectory(documentEntry.relativePath);
+			await createFolderInDirectory(documentEntry?.relativePath || '');
 			return;
 		case 'view':
 			await openDocument(fileId, 'view');
@@ -1178,6 +1180,48 @@ async function maybeLaunchPublicShare() {
 	}
 }
 
+function positionContextMenu(menu, button, menuWidth = 220, menuHeight = 320) {
+	const buttonRect = button.getBoundingClientRect();
+	const left = Math.min(window.innerWidth - menuWidth - 12, Math.max(12, buttonRect.right - menuWidth + 8));
+	const top = Math.min(window.innerHeight - menuHeight - 12, Math.max(12, buttonRect.top + 8));
+	menu.style.position = 'fixed';
+	menu.style.left = `${left}px`;
+	menu.style.top = `${top}px`;
+}
+
+function showNewDocumentMenu(button) {
+	closeOpenContextMenu();
+	const menu = document.createElement('div');
+	menu.className = 'context-menu new-document-menu';
+	menu.innerHTML = `
+		<button type="button" data-context-action="new-folder">New folder</button>
+		<div class="context-menu-separator"></div>
+		<button type="button" data-context-action="new-text">New text document</button>
+		<button type="button" data-context-action="new-spreadsheet">New spreadsheet</button>
+		<button type="button" data-context-action="new-presentation">New presentation</button>
+	`;
+	for (const menuButton of menu.querySelectorAll('[data-context-action]')) {
+		menuButton.addEventListener('click', function(event) {
+			event.preventDefault();
+			event.stopPropagation();
+			closeOpenContextMenu();
+			handleContextMenuAction(menuButton.dataset.contextAction);
+		});
+	}
+	positionContextMenu(menu, button, 220, 220);
+	document.body.appendChild(menu);
+	button.setAttribute('aria-expanded', 'true');
+	appState.newDocumentMenuOpen = true;
+}
+
+function toggleNewDocumentMenu(button) {
+	if (appState.newDocumentMenuOpen) {
+		closeOpenContextMenu();
+		return;
+	}
+	showNewDocumentMenu(button);
+}
+
 async function bulkDeleteSelected() {
 const selectedIds = Array.from(appState.selectedFileIds);
 if (selectedIds.length === 0) {
@@ -1200,16 +1244,11 @@ setStatus(`Deleted ${selectedIds.length} selected document${selectedIds.length =
 }
 
 elements.refreshButton.addEventListener('click', loadPage);
-elements.newTextButton.addEventListener('click', function() {
-createDocument('text');
+elements.newMenuButton.addEventListener('click', function(event) {
+event.preventDefault();
+event.stopPropagation();
+toggleNewDocumentMenu(elements.newMenuButton);
 });
-elements.newSpreadsheetButton.addEventListener('click', function() {
-createDocument('spreadsheet');
-});
-elements.newPresentationButton.addEventListener('click', function() {
-createDocument('presentation');
-});
-elements.newFolderButton.addEventListener('click', createFolder);
 elements.searchInput.addEventListener('input', applySearchFilter);
 elements.closeViewerButton.addEventListener('click', function() {
 closeViewer();

@@ -37,10 +37,6 @@
            <option value="light">Light</option>
            <option value="dark">Dark</option>
          </select>
-         <button id="new-text-button" type="button">New text document</button>
-         <button id="new-spreadsheet-button" type="button">New spreadsheet</button>
-         <button id="new-presentation-button" type="button">New presentation</button>
-         <button id="new-folder-button" type="button" class="secondary">New folder</button>
          <button id="refresh-button" type="button" class="secondary">Refresh</button>
        </div>
      </div>
@@ -68,9 +64,14 @@
      <label for="search-input" class="search-label">Search documents</label>
      <input id="search-input" class="search-input" type="search" placeholder="Search by name, path or MIME type">
 
-     <div id="bulk-actions" class="bulk-actions hidden">
-       <span id="selection-summary">0 selected</span>
-       <button id="bulk-delete-button" type="button" class="danger">Delete selected</button>
+     <div id="bulk-actions" class="bulk-actions">
+       <div class="bulk-actions-primary">
+         <button id="new-menu-button" type="button" class="secondary menu-button" aria-haspopup="menu" aria-expanded="false">New...</button>
+       </div>
+       <div class="bulk-actions-secondary">
+         <span id="selection-summary" class="hidden">0 selected</span>
+         <button id="bulk-delete-button" type="button" class="danger" disabled>Delete selected</button>
+       </div>
      </div>
 
      <aside id="details-panel" class="details-panel hidden" aria-live="polite">

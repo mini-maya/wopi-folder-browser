@@ -18,6 +18,7 @@ const {
 	SUPPORTED_MIME_TYPES
 } = require('../lib/documentStore');
 const { createHttpError } = require('../lib/errors');
+const { createFolderZip } = require('../lib/folderZip');
 const { createShare, getShare } = require('../lib/shareStore');
 const { createDocumentFromTemplate, listTemplates } = require('../lib/templateStore');
 const { getRequestUser } = require('../lib/userContext');
@@ -184,7 +185,13 @@ router.get('/files/:fileId/download', async function(req, res, next) {
 	try {
 		const document = await getDocumentById(config.documentRoot, req.params.fileId);
 		if (document.isDirectory) {
-			throw createHttpError(404, 'Folders cannot be downloaded.');
+			const zipArtifact = await createFolderZip(document);
+			res
+				.status(200)
+				.type('application/zip')
+				.attachment(zipArtifact.downloadName)
+				.send(zipArtifact.buffer);
+			return;
 		}
 		res.type(document.mimeType);
 		res.download(document.absolutePath, document.name);
