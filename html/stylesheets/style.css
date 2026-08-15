@@ -380,8 +380,10 @@ tbody tr.selected-row {
   background: var(--surface-subtle);
 }
 
-.file-row-preview.folder-preview {
-  background: linear-gradient(135deg, #fef3c7, #fde68a);
+.file-row-preview.folder-icon {
+  object-fit: contain;
+  border: 0;
+  background: transparent;
 }
 
 .tree-toggle {
@@ -565,6 +567,12 @@ tbody tr.selected-row {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.details-preview img.folder-icon {
+  width: 7rem;
+  height: 7rem;
+  object-fit: contain;
 }
 
 .details-header {

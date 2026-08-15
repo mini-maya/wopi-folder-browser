@@ -197,6 +197,66 @@ function escapeHtml(value) {
 		.replaceAll("'", '&#39;');
 }
 
+function folderContainsFiles(folderDocument) {
+	if (!folderDocument || !folderDocument.isDirectory) {
+		return false;
+	}
+	const prefix = `${folderDocument.relativePath}/`;
+	for (const document of appState.documents) {
+		if (!document.isDirectory && document.relativePath.startsWith(prefix)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function buildFolderPictogramSvg(options) {
+	const { isOpen, hasFiles, isFavorite, preferFavoriteIcon } = options;
+	const openFolderWithoutFilesSvg = `
+		<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" xml:space="preserve">
+			<g transform="translate(1.4065934065934016 1.4065934065934016) scale(2.81 2.81)">
+				<path d="M 73.538 35.162 l -52.548 1.952 c -1.739 0 -2.753 0.651 -3.232 2.323 L 6.85 76.754 c -0.451 1.586 -2.613 2.328 -4.117 2.328 h 0 C 1.23 79.082 0 77.852 0 76.349 l 0 -10.458 V 23.046 v -2.047 v -6.273 c 0 -2.103 1.705 -3.808 3.808 -3.808 h 27.056 c 1.01 0 1.978 0.401 2.692 1.115 l 7.85 7.85 c 0.714 0.714 1.683 1.115 2.692 1.115 H 69.73 c 2.103 0 3.808 1.705 3.808 3.808 v 1.301 C 73.538 26.106 73.538 35.162 73.538 35.162 z" fill="rgb(224,173,49)"/>
+				<path d="M 2.733 79.082 L 2.733 79.082 c 1.503 0 2.282 -1.147 2.733 -2.733 l 10.996 -38.362 c 0.479 -1.672 2.008 -2.824 3.748 -2.824 h 67.379 c 1.609 0 2.765 1.546 2.311 3.09 L 79.004 75.279 c -0.492 1.751 -1.571 3.818 -3.803 3.803 C 75.201 79.082 2.733 79.082 2.733 79.082 z" fill="rgb(255,200,67)"/>
+			</g>
+		</svg>
+	`;
+	const openFolderWithFilesSvg = `
+		<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" xml:space="preserve">
+			<g transform="translate(1.4065934065934016 1.4065934065934016) scale(2.81 2.81)">
+				<path d="M 73.538 35.162 l -52.548 1.952 c -1.739 0 -2.753 0.651 -3.232 2.323 L 6.85 76.754 c -0.451 1.586 -2.613 2.328 -4.117 2.328 h 0 C 1.23 79.082 0 77.852 0 76.349 l 0 -10.458 V 23.046 v -2.047 v -6.273 c 0 -2.103 1.705 -3.808 3.808 -3.808 h 27.056 c 1.01 0 1.978 0.401 2.692 1.115 l 7.85 7.85 c 0.714 0.714 1.683 1.115 2.692 1.115 H 69.73 c 2.103 0 3.808 1.705 3.808 3.808 v 1.301 L 73.538 35.162 z" fill="rgb(224,173,49)"/>
+				<path d="M 63.726 14.605 v 54.54 c 0 1.386 -1.124 2.51 -2.51 2.51 H 13.02 c -1.386 0 -2.51 -1.124 -2.51 -2.51 V 2.51 c 0 -1.386 1.124 -2.51 2.51 -2.51 H 49.12 C 51.554 6.059 56.533 10.874 63.726 14.605 z" fill="rgb(233,233,224)"/>
+				<path d="M 63.726 14.605 H 51.407 c -1.263 0 -2.287 -1.024 -2.287 -2.287 V 0 L 63.726 14.605 z" fill="rgb(217,215,202)"/>
+				<path d="M 52.978 23.363 H 20.139 c -0.829 0 -1.5 -0.671 -1.5 -1.5 s 0.671 -1.5 1.5 -1.5 h 32.839 c 0.828 0 1.5 0.671 1.5 1.5 S 53.806 23.363 52.978 23.363 z" fill="rgb(217,215,202)"/>
+				<path d="M 52.978 30.363 H 20.139 c -0.829 0 -1.5 -0.671 -1.5 -1.5 s 0.671 -1.5 1.5 -1.5 h 32.839 c 0.828 0 1.5 0.671 1.5 1.5 S 53.806 30.363 52.978 30.363 z" fill="rgb(217,215,202)"/>
+				<path d="M 2.733 79.082 L 2.733 79.082 c 1.503 0 2.282 -1.147 2.733 -2.733 l 10.996 -38.362 c 0.479 -1.672 2.008 -2.824 3.748 -2.824 h 67.379 c 1.609 0 2.765 1.546 2.311 3.09 L 79.004 75.279 c -0.492 1.751 -1.571 3.818 -3.803 3.803 H 2.733 z" fill="rgb(255,200,67)"/>
+			</g>
+		</svg>
+	`;
+	const closedFolderSvg = `
+		<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" xml:space="preserve">
+			<g transform="translate(1.4065934065934016 1.4065934065934016) scale(2.81 2.81)">
+				<path d="M 0 68.798 v 11.914 c 0 1.713 1.401 3.114 3.114 3.114 h 0 c 3.344 0 4.805 -2.642 4.805 -2.642 L 8.14 29.281 l 2.739 -2.827 l 72.894 -2.977 v -1.482 c 0 -2.396 -1.942 -4.338 -4.338 -4.338 H 50.236 c -1.15 0 -2.254 -0.457 -3.067 -1.27 l -8.943 -8.943 c -0.813 -0.813 -1.917 -1.27 -3.067 -1.27 H 4.338 C 1.942 6.174 0 8.116 0 10.512 v 7.146 v 2.332 V 68.798" fill="rgb(224,173,49)"/>
+				<path d="M 3.114 83.826 L 3.114 83.826 c 1.713 0 3.114 -1.401 3.114 -3.114 V 27.81 c 0 -2.393 1.94 -4.333 4.333 -4.333 h 75.107 c 2.393 0 4.333 1.94 4.333 4.333 v 51.684 c 0 2.393 -1.94 4.333 -4.333 4.333 C 85.667 83.826 3.114 83.826 3.114 83.826 z" fill="rgb(255,200,67)"/>
+			</g>
+		</svg>
+	`;
+	const favoriteFolderSvg = `
+		<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256" viewBox="0 0 256 256" xml:space="preserve">
+			<g transform="translate(1.4065934065934016 1.4065934065934016) scale(2.81 2.81)">
+				<path d="M 0 68.798 v 11.914 c 0 1.713 1.401 3.114 3.114 3.114 h 0 c 3.344 0 4.805 -2.642 4.805 -2.642 L 8.14 29.281 l 2.739 -2.827 l 72.894 -2.977 v -1.482 c 0 -2.396 -1.942 -4.338 -4.338 -4.338 H 50.236 c -1.15 0 -2.254 -0.457 -3.067 -1.27 l -8.943 -8.943 c -0.813 -0.813 -1.917 -1.27 -3.067 -1.27 H 4.338 C 1.942 6.174 0 8.116 0 10.512 v 7.146 v 2.332 V 68.798" fill="rgb(224,173,49)"/>
+				<path d="M 3.114 83.826 L 3.114 83.826 c 1.713 0 3.114 -1.401 3.114 -3.114 V 27.81 c 0 -2.393 1.94 -4.333 4.333 -4.333 h 75.107 c 2.393 0 4.333 1.94 4.333 4.333 v 51.684 c 0 2.393 -1.94 4.333 -4.333 4.333 C 85.667 83.826 3.114 83.826 3.114 83.826 z" fill="rgb(255,200,67)"/>
+				<path d="M 35.679 72.029 c -0.311 0 -0.62 -0.097 -0.882 -0.286 c -0.462 -0.336 -0.693 -0.904 -0.597 -1.468 l 1.997 -11.645 l -8.46 -8.246 c -0.409 -0.398 -0.556 -0.995 -0.38 -1.538 c 0.177 -0.543 0.646 -0.938 1.211 -1.021 l 11.692 -1.699 l 5.229 -10.595 c 0.253 -0.512 0.774 -0.836 1.345 -0.836 l 0 0 c 0.571 0 1.093 0.324 1.345 0.836 l 5.229 10.594 l 11.692 1.699 c 0.564 0.082 1.034 0.478 1.211 1.021 c 0.176 0.543 0.029 1.14 -0.38 1.538 l -8.461 8.246 l 1.998 11.645 c 0.097 0.563 -0.135 1.132 -0.597 1.468 c -0.464 0.336 -1.074 0.38 -1.58 0.114 l -10.457 -5.498 l -10.458 5.498 C 36.158 71.973 35.918 72.029 35.679 72.029 z M 32.008 50.357 l 6.848 6.676 c 0.354 0.345 0.515 0.841 0.432 1.328 l -1.617 9.426 l 8.465 -4.45 c 0.438 -0.229 0.96 -0.229 1.396 0 l 8.465 4.45 l -1.617 -9.426 c -0.083 -0.487 0.078 -0.983 0.432 -1.328 l 6.849 -6.676 l -9.465 -1.375 c -0.488 -0.071 -0.911 -0.378 -1.129 -0.82 l -4.232 -8.577 l -4.233 8.577 c -0.219 0.442 -0.641 0.749 -1.129 0.82 L 32.008 50.357 z" fill="rgb(184,53,53)"/>
+			</g>
+		</svg>
+	`;
+	const useFavoriteIcon = Boolean(isFavorite && (preferFavoriteIcon || !isOpen));
+	const effectiveHasFiles = isOpen && isFavorite ? true : hasFiles;
+	const svg = useFavoriteIcon
+		? favoriteFolderSvg
+		: (isOpen ? (effectiveHasFiles ? openFolderWithFilesSvg : openFolderWithoutFilesSvg) : closedFolderSvg);
+	return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 function buildFilePreviewSvg(document) {
 	const MIME_COLOR_MAP = {
 		folder: '#d97706',
@@ -232,9 +292,16 @@ function buildFilePreviewSvg(document) {
 
 function renderDocumentRow(document, depth) {
 	const isSelected = appState.selectedFileIds.has(document.id);
-	const previewUrl = buildFilePreviewSvg(document);
 	const isFolder = isFolderEntry(document);
 	const isExpanded = isFolder && appState.expandedFolderIds.has(document.id);
+	const previewUrl = isFolder
+		? buildFolderPictogramSvg({
+			isOpen: isExpanded,
+			hasFiles: folderContainsFiles(document),
+			isFavorite: Boolean(document.favorite),
+			preferFavoriteIcon: false
+		})
+		: buildFilePreviewSvg(document);
 	const toggleLabel = isExpanded ? 'Collapse folder' : 'Expand folder';
 	return `
 		<tr class="${isSelected ? 'selected-row' : ''} ${isFolder ? 'tree-folder-row' : 'tree-file-row'}" data-file-id="${document.id}" data-tree-depth="${depth}" data-is-folder="${isFolder}">
@@ -244,7 +311,7 @@ function renderDocumentRow(document, depth) {
 			<td class="tree-name-cell">
 				<div class="file-row-main tree-row-main" style="padding-left: ${depth * 1.25}rem">
 					${isFolder ? `<button type="button" class="tree-toggle" data-action="toggle-folder" data-file-id="${document.id}" aria-label="${toggleLabel}" aria-expanded="${isExpanded ? 'true' : 'false'}">${isExpanded ? '▾' : '▸'}</button>` : '<span class="tree-toggle-spacer" aria-hidden="true"></span>'}
-					<img class="file-row-preview ${isFolder ? 'folder-preview' : ''}" src="${previewUrl}" alt="${escapeHtml(document.name)} preview">
+					<img class="file-row-preview ${isFolder ? 'folder-icon' : ''}" src="${previewUrl}" alt="${escapeHtml(document.name)} preview">
 					<div>
 						<div class="file-name">${escapeHtml(document.name)}</div>
 						<div class="file-meta">${isFolder ? 'Folder' : escapeHtml(document.mimeType)}</div>
@@ -357,6 +424,14 @@ function getPreviewImage(document) {
 	if (!document) {
 		return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><rect width="240" height="160" fill="#e2e8f0"/><text x="120" y="90" text-anchor="middle" font-family="Arial" font-size="36" fill="#475569">FILE</text></svg>');
 	}
+	if (document.isDirectory) {
+		return buildFolderPictogramSvg({
+			isOpen: false,
+			hasFiles: false,
+			isFavorite: Boolean(document.favorite),
+			preferFavoriteIcon: true
+		});
+	}
 	return buildFilePreviewSvg(document);
 }
 
@@ -375,6 +450,7 @@ function closeDetailsPanel() {
 
 function renderDetailsPanel(document) {
 	const isFolder = isFolderEntry(document);
+	const previewClass = isFolder ? 'folder-icon' : '';
 	const favoriteLabel = document.favorite ? '★ Favorite' : '☆ Favorite';
 	const actionButtons = isFolder
 		? `
@@ -397,7 +473,7 @@ function renderDetailsPanel(document) {
 	elements.detailsPanelContent.innerHTML = `
 		<div class="details-card">
 			<div class="details-preview">
-				<img src="${getPreviewImage(document)}" alt="${escapeHtml(document.name)} preview">
+				<img class="${previewClass}" src="${getPreviewImage(document)}" alt="${escapeHtml(document.name)} preview">
 			</div>
 			<div class="details-header">
 				<h3>${escapeHtml(document.name)}</h3>
@@ -481,9 +557,7 @@ async function handleDetailsAction(action, fileId) {
 	const document = getDocumentById(fileId);
 	if (action === 'details-toggle-favorite') {
 		await handleFileAction('favorite', fileId);
-		if (document) {
-			renderDetailsPanel(document);
-		}
+		openDetailsPanel(fileId);
 		return;
 	}
 	if (action === 'details-view') {
