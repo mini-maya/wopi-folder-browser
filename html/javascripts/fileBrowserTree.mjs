@@ -50,3 +50,28 @@ export function getVisibleTreeEntries(documents, expandedFolderIds) {
 	walk('', 0);
 	return visibleEntries;
 }
+
+export function getFolderSelectionState(folderDocument, documents, selectedFileIds) {
+	if (!folderDocument || !folderDocument.isDirectory) {
+		return { checked: false, indeterminate: false };
+	}
+
+	const descendantFiles = documents.filter((document) => (
+		document.id !== folderDocument.id &&
+		!document.isDirectory &&
+		document.relativePath.startsWith(`${folderDocument.relativePath}/`)
+	));
+
+	if (descendantFiles.length === 0) {
+		return { checked: selectedFileIds.has(folderDocument.id), indeterminate: false };
+	}
+
+	const selectedCount = descendantFiles.filter((document) => selectedFileIds.has(document.id)).length;
+	if (selectedCount === 0) {
+		return { checked: false, indeterminate: false };
+	}
+	if (selectedCount === descendantFiles.length) {
+		return { checked: true, indeterminate: false };
+	}
+	return { checked: false, indeterminate: true };
+}

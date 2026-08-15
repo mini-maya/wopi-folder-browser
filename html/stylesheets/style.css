@@ -322,6 +322,13 @@ button.danger:hover {
   margin-left: auto;
 }
 
+.bulk-actions-secondary .menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3rem;
+}
+
 .bulk-actions span {
   color: var(--muted-text);
   font-weight: 700;
@@ -484,7 +491,8 @@ tbody tr.selected-row {
   background: var(--surface-subtle);
 }
 
-.new-document-menu {
+.new-document-menu,
+.bulk-actions-menu {
   min-width: 13rem;
 }
 

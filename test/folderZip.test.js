@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const zlib = require('node:zlib');
 
 const { createFolder } = require('../lib/documentStore');
-const { createFolderZip } = require('../lib/folderZip');
+const { createDocumentsZip, createFolderZip } = require('../lib/folderZip');
 const { listDocuments } = require('../lib/documentStore');
 
 function readZipEntries(buffer) {
@@ -72,6 +72,34 @@ test('createFolderZip packages a folder and its descendants', async function() {
 		assert.equal(entries.find((entry) => entry.name === 'archive/root.txt').data.toString(), 'root');
 		assert.equal(entries.find((entry) => entry.name === 'archive/nested/child.txt').data.toString(), 'child');
 		assert.equal(artifact.downloadName, 'archive.zip');
+	} finally {
+		await fs.rm(tempRoot, { recursive: true, force: true });
+	}
+});
+
+test('createDocumentsZip packages multiple selected entries', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await createFolder(tempRoot, { folderName: 'archive' });
+	await fs.mkdir(path.join(tempRoot, 'archive', 'nested'), { recursive: true });
+	await fs.writeFile(path.join(tempRoot, 'archive', 'nested', 'child.txt'), 'child');
+	await fs.writeFile(path.join(tempRoot, 'notes.txt'), 'notes');
+
+	const documents = await listDocuments(tempRoot);
+	const selectedDocuments = [
+		documents.find((document) => document.relativePath === 'archive'),
+		documents.find((document) => document.relativePath === 'notes.txt')
+	];
+	const artifact = await createDocumentsZip(selectedDocuments);
+
+	try {
+		const entries = readZipEntries(artifact.buffer);
+		const names = entries.map((entry) => entry.name);
+		assert.ok(names.includes('archive/'));
+		assert.ok(names.includes('archive/nested/'));
+		assert.ok(names.includes('archive/nested/child.txt'));
+		assert.ok(names.includes('notes.txt'));
+		assert.equal(entries.find((entry) => entry.name === 'notes.txt').data.toString(), 'notes');
+		assert.equal(artifact.downloadName, 'selected-items.zip');
 	} finally {
 		await fs.rm(tempRoot, { recursive: true, force: true });
 	}

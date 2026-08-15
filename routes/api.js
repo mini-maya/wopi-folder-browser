@@ -18,7 +18,7 @@ const {
 	SUPPORTED_MIME_TYPES
 } = require('../lib/documentStore');
 const { createHttpError } = require('../lib/errors');
-const { createFolderZip } = require('../lib/folderZip');
+const { createDocumentsZip, createFolderZip } = require('../lib/folderZip');
 const { createShare, getShare } = require('../lib/shareStore');
 const { createDocumentFromTemplate, listTemplates } = require('../lib/templateStore');
 const { getRequestUser } = require('../lib/userContext');
@@ -195,6 +195,30 @@ router.get('/files/:fileId/download', async function(req, res, next) {
 		}
 		res.type(document.mimeType);
 		res.download(document.absolutePath, document.name);
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.post('/files/bulk-download', async function(req, res, next) {
+	try {
+		const fileIds = Array.isArray(req.body.fileIds) ? req.body.fileIds : [];
+		if (fileIds.length === 0) {
+			throw createHttpError(400, 'No documents were selected for download.');
+		}
+
+		const documents = [];
+		for (const fileId of fileIds) {
+			const document = await getDocumentById(config.documentRoot, fileId);
+			documents.push(document);
+		}
+
+		const zipArtifact = await createDocumentsZip(documents);
+		res
+			.status(200)
+			.type('application/zip')
+			.attachment(zipArtifact.downloadName)
+			.send(zipArtifact.buffer);
 	} catch (error) {
 		next(error);
 	}

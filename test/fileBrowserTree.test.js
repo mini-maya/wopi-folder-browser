@@ -50,3 +50,34 @@ test('getVisibleTreeEntries expands nested folders recursively', function() {
 		]
 	);
 });
+
+test('getFolderSelectionState shows a partial state when only some children are selected', function() {
+	const documents = [
+		{ id: 'folder-1', name: 'archive', relativePath: 'archive', isDirectory: true },
+		{ id: 'folder-2', name: 'nested', relativePath: 'archive/nested', isDirectory: true },
+		{ id: 'file-1', name: 'a.txt', relativePath: 'archive/a.txt', isDirectory: false },
+		{ id: 'file-2', name: 'b.txt', relativePath: 'archive/nested/b.txt', isDirectory: false },
+		{ id: 'file-3', name: 'c.txt', relativePath: 'archive/nested/c.txt', isDirectory: false }
+	];
+	const partialSelection = new Set(['file-1']);
+
+	assert.deepEqual(treeHelpers.getFolderSelectionState(documents[0], documents, partialSelection), {
+		checked: false,
+		indeterminate: true
+	});
+
+	assert.deepEqual(treeHelpers.getFolderSelectionState(documents[0], documents, new Set(['file-1', 'file-2', 'file-3'])), {
+		checked: true,
+		indeterminate: false
+	});
+
+	assert.deepEqual(treeHelpers.getFolderSelectionState(documents[1], documents, new Set(['file-2'])), {
+		checked: false,
+		indeterminate: true
+	});
+
+	assert.deepEqual(treeHelpers.getFolderSelectionState(documents[1], documents, new Set(['file-2', 'file-3'])), {
+		checked: true,
+		indeterminate: false
+	});
+});

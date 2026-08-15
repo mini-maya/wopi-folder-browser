@@ -1,4 +1,4 @@
-import { getVisibleTreeEntries } from './fileBrowserTree.mjs';
+import { getFolderSelectionState, getVisibleTreeEntries } from './fileBrowserTree.mjs';
 
 const elements = {
 	documentRoot: document.querySelector('#document-root'),
@@ -15,7 +15,7 @@ const elements = {
 	selectAllFiles: document.querySelector('#select-all-files'),
 	bulkActions: document.querySelector('#bulk-actions'),
 	selectionSummary: document.querySelector('#selection-summary'),
-	bulkDeleteButton: document.querySelector('#bulk-delete-button'),
+	bulkActionsMenuButton: document.querySelector('#bulk-menu-button'),
 	viewerFrame: document.querySelector('#collabora-online-viewer'),
 	refreshButton: document.querySelector('#refresh-button'),
 	newMenuButton: document.querySelector('#new-menu-button'),
@@ -41,8 +41,10 @@ const appState = {
 	selectedFileIds: new Set(),
 	expandedFolderIds: new Set(),
 	folderPickerAction: null,
-	folderPickerFileId: null,
+	folderPickerSelectionIds: [],
+	folderPickerBulkMode: false,
 	contextMenuFileId: null,
+	bulkActionsMenuOpen: false,
 	newDocumentMenuOpen: false
 };
 
@@ -54,6 +56,20 @@ const systemThemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
 function isFolderEntry(document) {
 	return Boolean(document?.isDirectory);
+}
+
+function filterNestedDocuments(documents) {
+	const folders = documents
+		.filter((document) => isFolderEntry(document))
+		.sort((left, right) => left.relativePath.length - right.relativePath.length);
+	return documents.filter((document) => !folders.some((folder) => folder.id !== document.id && document.relativePath.startsWith(`${folder.relativePath}/`)));
+}
+
+function getBulkSelectedDocuments() {
+	const selectedDocuments = Array.from(appState.selectedFileIds)
+		.map((fileId) => getDocumentById(fileId))
+		.filter(Boolean);
+	return filterNestedDocuments(selectedDocuments);
 }
 
 function setStatus(message, isError = false) {
@@ -135,7 +151,10 @@ function updateBulkActionState(documents) {
 	const selectedCount = appState.selectedFileIds.size;
 	elements.selectionSummary.textContent = `${selectedCount} selected`;
 	elements.selectionSummary.classList.toggle('hidden', selectedCount === 0);
-	elements.bulkDeleteButton.disabled = selectedCount === 0;
+	elements.bulkActionsMenuButton.disabled = selectedCount === 0;
+	if (selectedCount === 0) {
+		closeOpenContextMenu();
+	}
 	if (!documents || documents.length === 0) {
 		elements.selectAllFiles.checked = false;
 		return;
@@ -173,16 +192,79 @@ function toggleFolderExpansion(folderId) {
 	appState.expandedFolderIds.add(folderId);
 }
 
-function toggleDocumentSelection(fileId, checked) {
-	if (checked) {
-		appState.selectedFileIds.add(fileId);
-	} else {
-		appState.selectedFileIds.delete(fileId);
+function getSelectionCascadeIds(fileId) {
+	const document = getDocumentById(fileId);
+	if (!document) {
+		return [fileId];
 	}
+	if (!document.isDirectory) {
+		return [document.id];
+	}
+
+	const prefix = `${document.relativePath}/`;
+	const cascadeDocumentIds = new Set(
+		appState.documents
+			.filter((entry) => entry.id === document.id || entry.relativePath.startsWith(prefix))
+			.map((entry) => entry.id)
+	);
+	return Array.from(cascadeDocumentIds);
+}
+
+function normalizeSelectedParentFolderState() {
+	const nextSelection = new Set(appState.selectedFileIds);
+	for (const document of appState.documents) {
+		if (!document.isDirectory) {
+			continue;
+		}
+		const state = getFolderSelectionState(document, appState.documents, nextSelection);
+		if (!state.checked && !state.indeterminate) {
+			nextSelection.delete(document.id);
+		}
+	}
+	appState.selectedFileIds = nextSelection;
+}
+
+function toggleDocumentSelection(fileId, checked) {
+	const document = getDocumentById(fileId);
+	const previousState = document && document.isDirectory
+		? getFolderSelectionState(document, appState.documents, appState.selectedFileIds)
+		: { checked: false, indeterminate: false };
+
+	const affectedIds = getSelectionCascadeIds(fileId);
+	if (document && document.isDirectory && previousState.indeterminate) {
+		for (const affectedId of affectedIds) {
+			appState.selectedFileIds.delete(affectedId);
+		}
+	} else {
+		for (const affectedId of affectedIds) {
+			if (checked) {
+				appState.selectedFileIds.add(affectedId);
+			} else {
+				appState.selectedFileIds.delete(affectedId);
+			}
+		}
+	}
+	normalizeSelectedParentFolderState();
 	updateBulkActionState(appState.visibleDocuments.length ? appState.visibleDocuments : appState.documents);
-	const row = elements.documentsBody.querySelector(`tr[data-file-id="${CSS.escape(fileId)}"]`);
-	if (row) {
-		row.classList.toggle('selected-row', checked);
+	for (const row of elements.documentsBody.querySelectorAll('tr[data-file-id]')) {
+		const rowFileId = row.dataset.fileId;
+		const isSelected = appState.selectedFileIds.has(rowFileId);
+		row.classList.toggle('selected-row', isSelected);
+		const checkbox = row.querySelector('.file-select-checkbox');
+		if (!checkbox) {
+			continue;
+		}
+
+		const rowDocument = getDocumentById(rowFileId);
+		if (rowDocument && rowDocument.isDirectory) {
+			const selectionState = getFolderSelectionState(rowDocument, appState.documents, appState.selectedFileIds);
+			checkbox.checked = selectionState.checked;
+			checkbox.indeterminate = selectionState.indeterminate;
+			continue;
+		}
+
+		checkbox.checked = isSelected;
+		checkbox.indeterminate = false;
 	}
 }
 
@@ -629,6 +711,72 @@ async function handleDetailsAction(action, fileId) {
 	}
 }
 
+function showBulkActionsMenu(button) {
+	closeOpenContextMenu();
+	const selectedDocuments = getBulkSelectedDocuments();
+	if (!selectedDocuments.length) {
+		return;
+	}
+
+	const menu = document.createElement('div');
+	menu.className = 'context-menu bulk-actions-menu';
+	menu.innerHTML = `
+		<button type="button" data-bulk-action="favorite">Add to favorites</button>
+		<button type="button" data-bulk-action="download">Download</button>
+		<button type="button" data-bulk-action="move">Move to...</button>
+		<button type="button" data-bulk-action="copy">Copy to...</button>
+		<div class="context-menu-separator"></div>
+		<button type="button" class="danger" data-bulk-action="delete">Delete...</button>
+	`;
+	for (const menuButton of menu.querySelectorAll('[data-bulk-action]')) {
+		menuButton.addEventListener('click', function(event) {
+			event.preventDefault();
+			event.stopPropagation();
+			closeOpenContextMenu();
+			handleBulkAction(menuButton.dataset.bulkAction);
+		});
+	}
+	positionContextMenu(menu, button, 220, 220);
+	document.body.appendChild(menu);
+	button.setAttribute('aria-expanded', 'true');
+	appState.bulkActionsMenuOpen = true;
+}
+
+function toggleBulkActionsMenu(button) {
+	if (appState.bulkActionsMenuOpen) {
+		closeOpenContextMenu();
+		return;
+	}
+	showBulkActionsMenu(button);
+}
+
+async function handleBulkAction(action) {
+	const selectedDocuments = getBulkSelectedDocuments();
+	if (!selectedDocuments.length) {
+		return;
+	}
+
+	switch (action) {
+		case 'favorite':
+			await addSelectedDocumentsToFavorites(selectedDocuments);
+			return;
+		case 'download':
+			await downloadSelectedDocuments(selectedDocuments);
+			return;
+		case 'move':
+			await openFolderTargetDialog('move', selectedDocuments.map((document) => document.id));
+			return;
+		case 'copy':
+			await openFolderTargetDialog('copy', selectedDocuments.map((document) => document.id));
+			return;
+		case 'delete':
+			await deleteSelectedDocuments(selectedDocuments);
+			return;
+		default:
+			return;
+	}
+}
+
 async function handleVersionAction(action, fileId, versionId) {
 	if (!versionId) {
 		return;
@@ -859,62 +1007,182 @@ function getFolderOptions() {
 	];
 }
 
-function populateFolderPicker(document) {
+function populateFolderPicker(document, preferRoot = false) {
 	const options = getFolderOptions();
 	elements.folderPickerTarget.innerHTML = options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('');
-	const preferredTarget = document?.relativePath.includes('/')
-		? document.relativePath.slice(0, document.relativePath.lastIndexOf('/'))
-		: '';
+	const preferredTarget = preferRoot
+		? ''
+		: (document?.relativePath.includes('/')
+			? document.relativePath.slice(0, document.relativePath.lastIndexOf('/'))
+			: '');
 	elements.folderPickerTarget.value = options.some((option) => option.value === preferredTarget) ? preferredTarget : '';
 	elements.folderPickerName.value = document?.name ?? '';
 }
 
-function openFolderTargetDialog(action, fileId) {
-	const document = getDocumentById(fileId);
-	if (!document) {
+function openFolderTargetDialog(action, fileIds) {
+	const selectionIds = Array.isArray(fileIds) ? fileIds : [fileIds];
+	const selectedDocuments = selectionIds
+		.map((fileId) => getDocumentById(fileId))
+		.filter(Boolean);
+	if (!selectedDocuments.length) {
 		return;
 	}
+	const isBulkMode = selectedDocuments.length > 1;
 
 	appState.folderPickerAction = action;
-	appState.folderPickerFileId = fileId;
+	appState.folderPickerSelectionIds = selectedDocuments.map((document) => document.id);
+	appState.folderPickerBulkMode = isBulkMode;
 	elements.folderPickerModal.classList.remove('hidden');
 	elements.folderPickerModal.setAttribute('aria-hidden', 'false');
 	elements.folderPickerConfirm.textContent = action === 'move' ? 'Move' : 'Copy';
-	elements.folderPickerTitle.textContent = action === 'move' ? 'Move to folder' : 'Copy to folder';
-	populateFolderPicker(document);
-	elements.folderPickerName.focus();
+	elements.folderPickerTitle.textContent = isBulkMode
+		? (action === 'move' ? 'Move selected items to folder' : 'Copy selected items to folder')
+		: (action === 'move' ? 'Move to folder' : 'Copy to folder');
+	elements.folderPickerName.closest('.modal-field').classList.toggle('hidden', isBulkMode);
+	populateFolderPicker(selectedDocuments[0], isBulkMode);
+	if (isBulkMode) {
+		elements.folderPickerTarget.focus();
+	} else {
+		elements.folderPickerName.focus();
+	}
 }
 
 function closeFolderTargetDialog() {
 	appState.folderPickerAction = null;
-	appState.folderPickerFileId = null;
+	appState.folderPickerSelectionIds = [];
+	appState.folderPickerBulkMode = false;
 	elements.folderPickerModal.classList.add('hidden');
 	elements.folderPickerModal.setAttribute('aria-hidden', 'true');
 }
 
 async function submitFolderTargetDialog(event) {
 	event.preventDefault();
-	const fileId = appState.folderPickerFileId;
+	const selectionIds = appState.folderPickerSelectionIds;
 	const action = appState.folderPickerAction;
-	if (!fileId || !action) {
+	if (!selectionIds.length || !action) {
 		return;
 	}
+	const isBulkMode = appState.folderPickerBulkMode;
 
 	const targetDirectory = elements.folderPickerTarget.value;
-	const targetName = elements.folderPickerName.value.trim();
-	if (!targetName) {
-		setStatus('Please enter a name.', true);
+	const documents = selectionIds
+		.map((fileId) => getDocumentById(fileId))
+		.filter(Boolean);
+	if (!documents.length) {
 		return;
 	}
 
-	if (action === 'move') {
-		await moveDocument(fileId, targetName, targetDirectory);
+	if (isBulkMode) {
+		if (action === 'move') {
+			await moveDocuments(documents, targetDirectory);
+		} else {
+			await copyDocuments(documents, targetDirectory);
+		}
 	} else {
-		await copyDocument(fileId, targetName, targetDirectory);
+		const fileId = selectionIds[0];
+		const targetName = elements.folderPickerName.value.trim();
+		if (!targetName) {
+			setStatus('Please enter a name.', true);
+			return;
+		}
+		if (action === 'move') {
+			await moveDocument(fileId, targetName, targetDirectory);
+		} else {
+			await copyDocument(fileId, targetName, targetDirectory);
+		}
 	}
 	await loadPage();
 	closeFolderTargetDialog();
-	setStatus(action === 'move' ? 'Entry moved.' : 'Entry copied.');
+	setStatus(isBulkMode
+		? (action === 'move' ? 'Selected items moved.' : 'Selected items copied.')
+		: (action === 'move' ? 'Entry moved.' : 'Entry copied.'));
+}
+
+async function moveDocuments(documents, targetDirectory) {
+	for (const document of documents) {
+		await requestJson(`/api/files/${encodeURIComponent(document.id)}/move`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				targetDirectory: targetDirectory || undefined,
+				targetName: document.name
+			})
+		});
+	}
+}
+
+async function copyDocuments(documents, targetDirectory) {
+	for (const document of documents) {
+		await requestJson(`/api/files/${encodeURIComponent(document.id)}/copy`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				targetDirectory: targetDirectory || undefined,
+				targetName: document.name
+			})
+		});
+	}
+}
+
+function downloadBlob(blob, downloadName) {
+	const objectUrl = URL.createObjectURL(blob);
+	const link = document.createElement('a');
+	link.href = objectUrl;
+	link.download = downloadName;
+	document.body.appendChild(link);
+	link.click();
+	link.remove();
+	window.setTimeout(function() {
+		URL.revokeObjectURL(objectUrl);
+	}, 0);
+}
+
+async function downloadSelectedDocuments(documents) {
+	if (documents.length === 1) {
+		window.location.href = `/api/files/${encodeURIComponent(documents[0].id)}/download`;
+		return;
+	}
+
+	setStatus('Preparing bulk download...');
+	const response = await fetch('/api/files/bulk-download', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ fileIds: documents.map((document) => document.id) })
+	});
+	if (!response.ok) {
+		const payload = await response.json().catch(() => null);
+		throw new Error(payload?.error ?? `Request failed with status ${response.status}.`);
+	}
+
+	const blob = await response.blob();
+	downloadBlob(blob, 'selected-items.zip');
+	setStatus(`Downloaded ${documents.length} selected item${documents.length === 1 ? '' : 's'}.`);
+}
+
+async function addSelectedDocumentsToFavorites(documents) {
+	for (const document of documents) {
+		await setFavoriteState(document.id, true);
+	}
+	await loadPage();
+	setStatus(`Added ${documents.length} selected item${documents.length === 1 ? '' : 's'} to favorites.`);
+}
+
+async function deleteSelectedDocuments(documents) {
+	const confirmed = window.confirm(`Delete ${documents.length} selected item${documents.length === 1 ? '' : 's'}?`);
+	if (!confirmed) {
+		return;
+	}
+
+	for (const document of documents) {
+		await requestJson(`/api/files/${encodeURIComponent(document.id)}`, {
+			method: 'DELETE'
+		});
+	}
+
+	appState.selectedFileIds.clear();
+	closeDetailsPanel();
+	await loadPage();
+	setStatus(`Deleted ${documents.length} selected item${documents.length === 1 ? '' : 's'}.`);
 }
 
 async function saveAsDocument(fileId) {
@@ -938,14 +1206,17 @@ async function deleteDocument(fileId) {
 	});
 }
 
-async function toggleFavorite(fileId) {
-	const file = appState.documents.find((entry) => entry.id === fileId);
-	const nextFavorite = !file.favorite;
+async function setFavoriteState(fileId, favorite) {
 	await requestJson(`/api/files/${encodeURIComponent(fileId)}/favorite`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ favorite: nextFavorite })
+		body: JSON.stringify({ favorite: favorite })
 	});
+}
+
+async function toggleFavorite(fileId) {
+	const file = appState.documents.find((entry) => entry.id === fileId);
+	await setFavoriteState(fileId, !file.favorite);
 }
 
 async function showVersions(fileId) {
@@ -1046,6 +1317,7 @@ function closeOpenContextMenu() {
 		menuButton.setAttribute('aria-expanded', 'false');
 	}
 	appState.contextMenuFileId = null;
+	appState.bulkActionsMenuOpen = false;
 	appState.newDocumentMenuOpen = false;
 }
 
@@ -1223,24 +1495,7 @@ function toggleNewDocumentMenu(button) {
 }
 
 async function bulkDeleteSelected() {
-const selectedIds = Array.from(appState.selectedFileIds);
-if (selectedIds.length === 0) {
-	return;
-}
-
-const confirmed = window.confirm(`Delete ${selectedIds.length} selected document${selectedIds.length === 1 ? '' : 's'}?`);
-if (!confirmed) {
-	return;
-}
-
-for (const fileId of selectedIds) {
-	await requestJson(`/api/files/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
-}
-
-appState.selectedFileIds.clear();
-closeDetailsPanel();
-await loadPage();
-setStatus(`Deleted ${selectedIds.length} selected document${selectedIds.length === 1 ? '' : 's'}.`);
+	return deleteSelectedDocuments(getBulkSelectedDocuments());
 }
 
 elements.refreshButton.addEventListener('click', loadPage);
@@ -1248,6 +1503,11 @@ elements.newMenuButton.addEventListener('click', function(event) {
 event.preventDefault();
 event.stopPropagation();
 toggleNewDocumentMenu(elements.newMenuButton);
+});
+elements.bulkActionsMenuButton.addEventListener('click', function(event) {
+event.preventDefault();
+event.stopPropagation();
+toggleBulkActionsMenu(elements.bulkActionsMenuButton);
 });
 elements.searchInput.addEventListener('input', applySearchFilter);
 elements.closeViewerButton.addEventListener('click', function() {
@@ -1266,7 +1526,6 @@ if (!event.target.closest('.context-menu') && !event.target.closest('.menu-butto
 }
 });
 elements.closeDetailsPanelButton.addEventListener('click', closeDetailsPanel);
-elements.bulkDeleteButton.addEventListener('click', bulkDeleteSelected);
 elements.selectAllFiles.addEventListener('change', function(event) {
 const visibleDocuments = appState.visibleDocuments.length ? appState.visibleDocuments : appState.documents;
 if (event.target.checked) {
