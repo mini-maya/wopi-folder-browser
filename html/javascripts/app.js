@@ -1,6 +1,8 @@
 import { getFolderSelectionState, getFolderSizeBytes, getVisibleTreeEntries } from './fileBrowserTree.mjs';
 
 const elements = {
+	layout: document.querySelector('#app-layout'),
+	layoutSplitter: document.querySelector('#layout-splitter'),
 	documentRoot: document.querySelector('#document-root'),
 	appBaseUrl: document.querySelector('#app-base-url'),
 	collaboraUrl: document.querySelector('#collabora-url'),
@@ -45,11 +47,18 @@ const appState = {
 	folderPickerBulkMode: false,
 	contextMenuFileId: null,
 	bulkActionsMenuOpen: false,
-	newDocumentMenuOpen: false
+	newDocumentMenuOpen: false,
+	viewerOpen: false,
+	viewerPanelWidth: 800,
+	isResizingViewer: false
 };
 
 const DEFAULT_VIEWER_TITLE = 'No document opened yet';
 const DEFAULT_VIEWER_SUBTITLE = 'Choose a file from the list to open it in Collabora.';
+const DEFAULT_VIEWER_WIDTH = 800;
+const MIN_VIEWER_WIDTH = 480;
+const MIN_SIDEBAR_WIDTH = 480;
+const SPLITTER_WIDTH = 12;
 const THEME_STORAGE_KEY = 'wopi-folder-browser-theme';
 const THEME_MODES = new Set(['auto', 'light', 'dark']);
 const systemThemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -115,6 +124,63 @@ function initializeTheme() {
 			applyThemeMode('auto', false);
 		}
 	});
+}
+
+function syncViewerLayout() {
+	const layoutPadding = getLayoutHorizontalPadding();
+	const layoutWidth = elements.layout.getBoundingClientRect().width - layoutPadding;
+	const maximumWidth = Math.max(MIN_VIEWER_WIDTH, layoutWidth - SPLITTER_WIDTH - MIN_SIDEBAR_WIDTH);
+	const width = appState.viewerOpen
+		? Math.min(Math.max(MIN_VIEWER_WIDTH, appState.viewerPanelWidth), maximumWidth)
+		: 0;
+	appState.viewerPanelWidth = width;
+	elements.layout.style.setProperty('--viewer-width', `${width}px`);
+	elements.layout.style.gridTemplateColumns = appState.viewerOpen
+		? `${width}px ${SPLITTER_WIDTH}px minmax(${MIN_SIDEBAR_WIDTH}px, 1fr)`
+		: 'minmax(0, 1fr)';
+	elements.layout.classList.toggle('viewer-open', appState.viewerOpen);
+	elements.layoutSplitter.classList.toggle('hidden', !appState.viewerOpen);
+}
+
+function getLayoutHorizontalPadding() {
+	const layoutStyles = window.getComputedStyle(elements.layout);
+	return parseFloat(layoutStyles.paddingLeft) + parseFloat(layoutStyles.paddingRight);
+}
+
+function startViewerResize(event) {
+	if (!appState.viewerOpen) {
+		return;
+	}
+	appState.isResizingViewer = true;
+	document.body.style.userSelect = 'none';
+	document.body.style.cursor = 'col-resize';
+	event.preventDefault();
+	event.stopPropagation();
+	elements.layoutSplitter.setPointerCapture?.(event.pointerId);
+}
+
+function updateViewerResize(event) {
+	if (!appState.isResizingViewer) {
+		return;
+	}
+	const layoutBounds = elements.layout.getBoundingClientRect();
+	const layoutWidth = layoutBounds.width - getLayoutHorizontalPadding();
+	const maximumWidth = Math.max(MIN_VIEWER_WIDTH, layoutWidth - SPLITTER_WIDTH - MIN_SIDEBAR_WIDTH);
+	const nextWidth = Math.min(
+		Math.max(MIN_VIEWER_WIDTH, event.clientX - layoutBounds.left - SPLITTER_WIDTH),
+		maximumWidth
+	);
+	appState.viewerPanelWidth = nextWidth;
+	syncViewerLayout();
+}
+
+function stopViewerResize() {
+	if (!appState.isResizingViewer) {
+		return;
+	}
+	appState.isResizingViewer = false;
+	document.body.style.userSelect = '';
+	document.body.style.cursor = '';
 }
 
 function formatBytes(bytes) {
@@ -882,6 +948,9 @@ function submitLaunchPayload(payload) {
 	elements.accessTokenTtl.value = String(payload.accessTokenTtl);
 	elements.viewerTitle.textContent = `${payload.file.name} (${payload.mode})`;
 	elements.viewerSubtitle.textContent = payload.file.relativePath;
+	appState.viewerPanelWidth = DEFAULT_VIEWER_WIDTH;
+	appState.viewerOpen = true;
+	syncViewerLayout();
 	setViewerMode(payload.mode);
 	elements.collaboraForm.requestSubmit();
 }
@@ -900,7 +969,7 @@ function setViewerMode(mode) {
 		elements.closeViewerButton.setAttribute('aria-label', 'Close shared document');
 		return;
 	}
-	elements.closeViewerButton.classList.remove('hidden');
+	elements.closeViewerButton.classList.toggle('hidden', !appState.viewerOpen);
 	elements.closeViewerButton.setAttribute('aria-label', 'Close document');
 }
 
@@ -921,6 +990,8 @@ async function closeViewer() {
 		return;
 	}
 	document.body.classList.remove('share-session');
+	appState.viewerOpen = false;
+	syncViewerLayout();
 	elements.closeViewerButton.classList.add('hidden');
 	elements.viewerTitle.textContent = DEFAULT_VIEWER_TITLE;
 	elements.viewerSubtitle.textContent = DEFAULT_VIEWER_SUBTITLE;
@@ -1330,7 +1401,6 @@ async function showContextMenu(fileId, button) {
 	menu.innerHTML = `
 		<button type="button" data-context-action="details" data-file-id="${documentEntry.id}">Details</button>
 		<button type="button" data-context-action="favorite" data-file-id="${documentEntry.id}">${documentEntry.favorite ? 'Remove from favorites' : 'Add to favorites'}</button>
-		${isFolder ? '' : `<button type="button" data-context-action="view" data-file-id="${documentEntry.id}">Preview (View)</button>`}
 		${isFolder ? `<button type="button" data-context-action="new-document" data-file-id="${documentEntry.id}" class="has-submenu">New...</button>
 		<div class="context-menu-submenu hidden" data-submenu="new-document" aria-label="New document submenu">
 			<button type="button" data-context-action="new-folder" data-file-id="${documentEntry.id}">New folder</button>
@@ -1441,9 +1511,6 @@ async function handleContextMenuAction(action, fileId) {
 			return;
 		case 'new-folder':
 			await createFolderInDirectory(documentEntry?.relativePath || '');
-			return;
-		case 'view':
-			await openDocument(fileId, 'view');
 			return;
 		case 'rename':
 			await renameDocument(fileId);
@@ -1582,6 +1649,12 @@ async function bulkDeleteSelected() {
 	return deleteSelectedDocuments(getBulkSelectedDocuments());
 }
 
+elements.layoutSplitter.addEventListener('pointerdown', startViewerResize);
+document.addEventListener('pointermove', updateViewerResize);
+document.addEventListener('pointerup', stopViewerResize);
+document.addEventListener('pointercancel', stopViewerResize);
+window.addEventListener('resize', syncViewerLayout);
+
 elements.refreshButton.addEventListener('click', loadPage);
 elements.newMenuButton.addEventListener('click', function(event) {
 event.preventDefault();
@@ -1629,6 +1702,7 @@ applyThemeMode(event.target.value, true);
 });
 
 initializeTheme();
+syncViewerLayout();
 maybeLaunchPublicShare().then(function(launchedFromShare) {
 if (!launchedFromShare) {
 	loadPage();
