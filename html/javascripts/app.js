@@ -210,41 +210,15 @@ function getSelectionCascadeIds(fileId) {
 	return Array.from(cascadeDocumentIds);
 }
 
-function normalizeSelectedParentFolderState() {
-	const nextSelection = new Set(appState.selectedFileIds);
-	for (const document of appState.documents) {
-		if (!document.isDirectory) {
-			continue;
-		}
-		const state = getFolderSelectionState(document, appState.documents, nextSelection);
-		if (!state.checked && !state.indeterminate) {
-			nextSelection.delete(document.id);
-		}
-	}
-	appState.selectedFileIds = nextSelection;
-}
-
 function toggleDocumentSelection(fileId, checked) {
-	const document = getDocumentById(fileId);
-	const previousState = document && document.isDirectory
-		? getFolderSelectionState(document, appState.documents, appState.selectedFileIds)
-		: { checked: false, indeterminate: false };
-
 	const affectedIds = getSelectionCascadeIds(fileId);
-	if (document && document.isDirectory && previousState.indeterminate) {
-		for (const affectedId of affectedIds) {
+	for (const affectedId of affectedIds) {
+		if (checked) {
+			appState.selectedFileIds.add(affectedId);
+		} else {
 			appState.selectedFileIds.delete(affectedId);
 		}
-	} else {
-		for (const affectedId of affectedIds) {
-			if (checked) {
-				appState.selectedFileIds.add(affectedId);
-			} else {
-				appState.selectedFileIds.delete(affectedId);
-			}
-		}
 	}
-	normalizeSelectedParentFolderState();
 	updateBulkActionState(appState.visibleDocuments.length ? appState.visibleDocuments : appState.documents);
 	for (const row of elements.documentsBody.querySelectorAll('tr[data-file-id]')) {
 		const rowFileId = row.dataset.fileId;
@@ -259,7 +233,7 @@ function toggleDocumentSelection(fileId, checked) {
 		if (rowDocument && rowDocument.isDirectory) {
 			const selectionState = getFolderSelectionState(rowDocument, appState.documents, appState.selectedFileIds);
 			checkbox.checked = selectionState.checked;
-			checkbox.indeterminate = selectionState.indeterminate;
+			checkbox.indeterminate = false;
 			continue;
 		}
 

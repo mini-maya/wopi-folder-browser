@@ -51,7 +51,7 @@ test('getVisibleTreeEntries expands nested folders recursively', function() {
 	);
 });
 
-test('getFolderSelectionState shows a partial state when only some children are selected', function() {
+test('getFolderSelectionState reflects direct folder selection only', function() {
 	const documents = [
 		{ id: 'folder-1', name: 'archive', relativePath: 'archive', isDirectory: true },
 		{ id: 'folder-2', name: 'nested', relativePath: 'archive/nested', isDirectory: true },
@@ -59,25 +59,20 @@ test('getFolderSelectionState shows a partial state when only some children are 
 		{ id: 'file-2', name: 'b.txt', relativePath: 'archive/nested/b.txt', isDirectory: false },
 		{ id: 'file-3', name: 'c.txt', relativePath: 'archive/nested/c.txt', isDirectory: false }
 	];
-	const partialSelection = new Set(['file-1']);
 
-	assert.deepEqual(treeHelpers.getFolderSelectionState(documents[0], documents, partialSelection), {
-		checked: false,
-		indeterminate: true
+	assert.deepEqual(treeHelpers.getFolderSelectionState(documents[0], documents, new Set(['file-1'])), {
+		checked: false
 	});
 
-	assert.deepEqual(treeHelpers.getFolderSelectionState(documents[0], documents, new Set(['file-1', 'file-2', 'file-3'])), {
-		checked: true,
-		indeterminate: false
-	});
-
-	assert.deepEqual(treeHelpers.getFolderSelectionState(documents[1], documents, new Set(['file-2'])), {
-		checked: false,
-		indeterminate: true
+	assert.deepEqual(treeHelpers.getFolderSelectionState(documents[0], documents, new Set(['folder-1'])), {
+		checked: true
 	});
 
 	assert.deepEqual(treeHelpers.getFolderSelectionState(documents[1], documents, new Set(['file-2', 'file-3'])), {
-		checked: true,
-		indeterminate: false
+		checked: false
+	});
+
+	assert.deepEqual(treeHelpers.getFolderSelectionState(documents[1], documents, new Set(['folder-2'])), {
+		checked: true
 	});
 });
