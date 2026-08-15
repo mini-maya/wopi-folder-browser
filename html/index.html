@@ -16,7 +16,11 @@
          <h2 id="viewer-title">No document opened yet</h2>
          <p id="viewer-subtitle">Choose a file from the list to open it in Collabora.</p>
        </div>
-       <button id="close-viewer-button" type="button" class="secondary hidden" aria-label="Close document">Close</button>
+       <button id="close-viewer-button" type="button" class="secondary hidden" aria-label="Close document">
+         <svg class="close-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+           <path d="M7 7L17 17M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+         </svg>
+       </button>
      </div>
 
      <div class="viewer-frame-wrapper">

@@ -83,6 +83,12 @@ button.danger:hover {
   background: var(--danger-hover);
 }
 
+.close-icon {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+}
+
 .layout {
   --viewer-width: 560px;
   display: grid;
@@ -801,6 +807,36 @@ body.editor-fullscreen .viewer-header,
 body.share-session .viewer-header {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border-default);
+}
+
+body.editor-fullscreen .viewer-header {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 3;
+  width: auto;
+  padding: 0;
+  border: 0;
+}
+
+body.editor-fullscreen .viewer-header > div {
+  display: none;
+}
+
+body.editor-fullscreen #close-viewer-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  background: var(--primary);
+  color: #fff;
+  box-shadow: var(--panel-shadow);
+}
+
+body.editor-fullscreen #close-viewer-button:hover {
+  background: var(--primary-hover);
 }
 
 body.share-session #close-viewer-button {
