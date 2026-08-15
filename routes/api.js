@@ -131,7 +131,7 @@ router.get('/config', function(req, res) {
 	res.json({
 		documentRoot: config.documentRoot,
 		templateRoot: config.templateRoot,
-		appBaseUrl: config.getAppBaseUrl(req),
+		appBaseUrl: config.getPublicAppBaseUrl(req),
 		collaboraPublicUrl: config.collaboraPublicUrl,
 		defaultEditorMode: config.defaultEditorMode,
 		features: {
@@ -556,7 +556,7 @@ router.post('/shares', async function(req, res, next) {
 		});
 		res.status(201).json({
 			share: share,
-			url: `${config.getAppBaseUrl(req)}/share/${encodeURIComponent(share.id)}`
+			url: `${config.getPublicAppBaseUrl(req)}/share/${encodeURIComponent(share.id)}`
 		});
 	} catch (error) {
 		next(error);

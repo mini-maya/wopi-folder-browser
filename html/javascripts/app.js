@@ -886,21 +886,46 @@ function submitLaunchPayload(payload) {
 	elements.collaboraForm.requestSubmit();
 }
 
+function isShareSessionPath() {
+	return window.location.pathname.startsWith('/share/');
+}
+
 function setViewerMode(mode) {
-	const isFullscreenMode = mode === 'edit';
+	const isShareSession = isShareSessionPath();
+	const isFullscreenMode = isShareSession || mode === 'edit';
+	document.body.classList.toggle('share-session', isShareSession);
 	document.body.classList.toggle('editor-fullscreen', isFullscreenMode);
+	if (isShareSession) {
+		elements.closeViewerButton.classList.add('hidden');
+		elements.closeViewerButton.setAttribute('aria-label', 'Close shared document');
+		return;
+	}
 	elements.closeViewerButton.classList.remove('hidden');
+	elements.closeViewerButton.setAttribute('aria-label', 'Close document');
 }
 
 async function closeViewer() {
 	document.body.classList.remove('editor-fullscreen');
+	if (isShareSessionPath()) {
+		document.body.classList.add('share-session');
+		elements.closeViewerButton.classList.add('hidden');
+		try {
+			window.close();
+		} catch (error) {
+			// Browsers may block programmatic tab-closing; fall back to the blank share state.
+		}
+		elements.viewerTitle.textContent = DEFAULT_VIEWER_TITLE;
+		elements.viewerSubtitle.textContent = DEFAULT_VIEWER_SUBTITLE;
+		elements.viewerFrame.src = 'about:blank';
+		setStatus('Share session closed.');
+		return;
+	}
+	document.body.classList.remove('share-session');
 	elements.closeViewerButton.classList.add('hidden');
 	elements.viewerTitle.textContent = DEFAULT_VIEWER_TITLE;
 	elements.viewerSubtitle.textContent = DEFAULT_VIEWER_SUBTITLE;
 	elements.viewerFrame.src = 'about:blank';
-	if (window.location.pathname.startsWith('/share/')) {
-		window.history.replaceState(null, '', '/');
-	}
+	window.history.replaceState(null, '', '/');
 	await loadPage();
 	setStatus('Closed document.');
 }

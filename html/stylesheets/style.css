@@ -730,41 +730,53 @@ tbody tr.selected-row {
   display: none;
 }
 
-body.editor-fullscreen {
+body.editor-fullscreen,
+body.share-session {
   background: var(--panel-bg);
   overflow: hidden;
 }
 
-body.editor-fullscreen .layout {
+body.editor-fullscreen .layout,
+body.share-session .layout {
   display: block;
   min-height: 100vh;
   padding: 0;
 }
 
-body.editor-fullscreen .sidebar {
+body.editor-fullscreen .sidebar,
+body.share-session .sidebar {
   display: none;
 }
 
-body.editor-fullscreen .viewer {
+body.editor-fullscreen .viewer,
+body.share-session .viewer {
   min-height: 100vh;
   border-radius: 0;
   box-shadow: none;
 }
 
-body.editor-fullscreen .details-panel {
+body.editor-fullscreen .details-panel,
+body.share-session .details-panel {
   display: none;
 }
 
-body.editor-fullscreen .viewer-header {
+body.editor-fullscreen .viewer-header,
+body.share-session .viewer-header {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border-default);
 }
 
-body.editor-fullscreen .viewer-frame-wrapper {
+body.share-session #close-viewer-button {
+  display: none;
+}
+
+body.editor-fullscreen .viewer-frame-wrapper,
+body.share-session .viewer-frame-wrapper {
   padding: 0;
 }
 
-body.editor-fullscreen #collabora-online-viewer {
+body.editor-fullscreen #collabora-online-viewer,
+body.share-session #collabora-online-viewer {
   min-height: calc(100vh - 74px);
   border: 0;
   border-radius: 0;
