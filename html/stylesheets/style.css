@@ -506,6 +506,16 @@ tbody tr.selected-row {
   background: var(--danger-hover);
 }
 
+.context-menu .accent {
+  background: var(--primary);
+  color: #fff;
+  border: 1px solid var(--primary);
+}
+
+.context-menu .accent:hover {
+  background: var(--primary-hover);
+}
+
 .context-menu .has-submenu {
   position: relative;
 }

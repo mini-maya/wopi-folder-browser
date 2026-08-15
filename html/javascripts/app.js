@@ -1,4 +1,4 @@
-import { getFolderSelectionState, getVisibleTreeEntries } from './fileBrowserTree.mjs';
+import { getFolderSelectionState, getFolderSizeBytes, getVisibleTreeEntries } from './fileBrowserTree.mjs';
 
 const elements = {
 	documentRoot: document.querySelector('#document-root'),
@@ -394,7 +394,7 @@ function renderDocumentRow(document, depth) {
 			<td>${isFolder ? '—' : formatBytes(document.size)}</td>
 			<td>
 				<div class="actions actions-inline">
-					${isFolder ? '<button type="button" class="secondary" data-action="details" data-file-id="'+document.id+'">Details</button>' : '<button type="button" data-action="open" data-mode="edit" data-file-id="'+document.id+'">Open</button><button type="button" class="secondary" data-action="open" data-mode="view" data-file-id="'+document.id+'">View</button>'}
+					${isFolder ? '' : '<button type="button" data-action="open" data-mode="edit" data-file-id="'+document.id+'">Open</button><button type="button" class="secondary" data-action="open" data-mode="view" data-file-id="'+document.id+'">View</button>'}
 					<button type="button" class="secondary menu-button" data-action="context-menu" data-file-id="${document.id}" aria-label="Open file actions">⋯</button>
 				</div>
 			</td>
@@ -520,6 +520,7 @@ function closeDetailsPanel() {
 
 function renderDetailsPanel(document) {
 	const isFolder = isFolderEntry(document);
+	const folderSizeBytes = isFolder ? getFolderSizeBytes(document, appState.documents) : document.size;
 	const previewClass = isFolder ? 'folder-icon' : '';
 	const favoriteLabel = document.favorite ? '★ Favorite' : '☆ Favorite';
 	const actionButtons = isFolder
@@ -550,7 +551,7 @@ function renderDetailsPanel(document) {
 				<button type="button" class="secondary" data-action="details-toggle-favorite" data-file-id="${document.id}">${favoriteLabel}</button>
 			</div>
 			<div class="detail-meta">
-				<div class="detail-meta-row"><span>Size</span><strong>${formatBytes(document.size)}</strong></div>
+				<div class="detail-meta-row"><span>Size</span><strong>${formatBytes(folderSizeBytes)}</strong></div>
 				<div class="detail-meta-row"><span>Modified</span><strong>${formatDate(document.updatedAt)}</strong></div>
 				<div class="detail-meta-row"><span>Author</span><strong>shared-user</strong></div>
 				<div class="detail-meta-row"><span>Type</span><strong>${isFolder ? 'Folder' : 'File'}</strong></div>
@@ -577,7 +578,7 @@ function renderDetailsPanel(document) {
 async function renderVersionList(fileId) {
 	try {
 		const payload = await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions`);
-		const document = getDocumentById(fileId);
+		const fileEntry = getDocumentById(fileId);
 		const versions = Array.isArray(payload.versions) ? payload.versions : [];
 		elements.detailsPanelContent.innerHTML = `
 			<div class="details-card">
@@ -588,20 +589,17 @@ async function renderVersionList(fileId) {
 				<div class="version-list">
 					${versions.length ? versions.map(function(version, index) {
 						const isCurrent = index === 0;
+						const versionNumber = isCurrent ? null : versions.length - index;
 						return `
 							<div class="version-item">
-								<div class="version-thumb"><img src="${getPreviewImage(document)}" alt="Version preview"></div>
+								<div class="version-thumb"><img src="${getPreviewImage(fileEntry)}" alt="Version preview"></div>
 								<div class="version-body">
-									<h4>${isCurrent ? 'Current version' : `Version ${index + 1}`}${version.label ? ` — ${escapeHtml(version.label)}` : ''}</h4>
+									<h4>${isCurrent ? 'Current version' : `Version ${versionNumber}`}${version.label ? ` — ${escapeHtml(version.label)}` : ''}</h4>
 									<small>${escapeHtml(version.createdBy?.name ?? 'shared-user')}</small>
 									<small>${formatDate(version.createdAt)} · ${formatBytes(version.size)}</small>
 								</div>
-								<div class="version-actions">
-									${isCurrent ? '<button type="button" class="secondary" data-action="version-name-current" data-file-id="'+fileId+'" data-version-id="'+version.id+'">Name current</button>' : '<button type="button" class="secondary" data-action="version-rename" data-file-id="'+fileId+'" data-version-id="'+version.id+'">Rename</button>'}
-									${!isCurrent ? '<button type="button" class="secondary" data-action="version-compare" data-file-id="'+fileId+'" data-version-id="'+version.id+'">Compare</button>' : ''}
-									${!isCurrent ? '<button type="button" class="secondary" data-action="version-restore" data-file-id="'+fileId+'" data-version-id="'+version.id+'">Restore</button>' : ''}
-									<button type="button" class="secondary" data-action="version-download" data-file-id="'+fileId+'" data-version-id="'+version.id+'">Download</button>
-									${!isCurrent ? '<button type="button" class="danger" data-action="version-delete" data-file-id="'+fileId+'" data-version-id="'+version.id+'">Delete</button>' : ''}
+								<div class="version-actions" style="position: relative;">
+									<button type="button" class="secondary menu-button" data-action="context-menu" data-file-id="${fileId}" data-version-id="${version.id}" aria-label="Open version actions" aria-expanded="false">⋯</button>
 								</div>
 							</div>
 						`;
@@ -609,13 +607,60 @@ async function renderVersionList(fileId) {
 				</div>
 			</div>
 		`;
+
 		for (const button of elements.detailsPanelContent.querySelectorAll('[data-action][data-file-id]')) {
-			button.addEventListener('click', function() {
+			button.addEventListener('click', function(event) {
 				if (button.dataset.action === 'details-back') {
 					openDetailsPanel(fileId);
 					return;
 				}
-				handleVersionAction(button.dataset.action, fileId, button.dataset.versionId);
+				if (button.dataset.action === 'context-menu' && button.dataset.versionId) {
+					event.preventDefault();
+					event.stopPropagation();
+					const menuEntries = [];
+					const version = versions.find((entry) => entry.id === button.dataset.versionId);
+					if (!version) {
+						return;
+					}
+					const isCurrent = versions[0]?.id === version.id;
+					menuEntries.push({ label: 'View', action: 'version-view', danger: false, accent: true });
+					menuEntries.push({ divider: true });
+					menuEntries.push(isCurrent
+						? { label: 'Name current', action: 'version-name-current', danger: false }
+						: { label: 'Rename', action: 'version-rename', danger: false }
+					);
+					if (!isCurrent) {
+						menuEntries.push({ label: 'Restore', action: 'version-restore', danger: false });
+					}
+					menuEntries.push({ label: 'Download', action: 'version-download', danger: false });
+					if (!isCurrent) {
+					menuEntries.push({ divider: true });
+					menuEntries.push({ label: 'Delete', action: 'version-delete', danger: true });
+					}
+
+					closeOpenContextMenu();
+					const menu = document.createElement('div');
+					menu.className = 'context-menu';
+					menu.innerHTML = menuEntries.map(function(entry) {
+					if (entry.divider) {
+						return '<div class="context-menu-separator"></div>';
+					}
+					const accentClass = entry.accent ? 'accent' : '';
+					return `<button type="button" data-context-action="${entry.action}" data-file-id="${fileId}" data-version-id="${version.id}" class="${entry.danger ? 'danger' : ''} ${accentClass}">${entry.label}</button>`;
+					}).join('');
+					for (const menuButton of menu.querySelectorAll('[data-context-action][data-file-id]')) {
+						menuButton.addEventListener('click', function(menuEvent) {
+							menuEvent.preventDefault();
+							menuEvent.stopPropagation();
+							closeOpenContextMenu();
+							handleVersionAction(menuButton.dataset.contextAction, fileId, version.id);
+						});
+					}
+					positionContextMenu(menu, button, 220, 220);
+					document.body.appendChild(menu);
+					button.setAttribute('aria-expanded', 'true');
+					return;
+				}
 			});
 		}
 	} catch (error) {
@@ -769,6 +814,12 @@ async function handleVersionAction(action, fileId, versionId) {
 			await renderVersionList(fileId);
 			return;
 		}
+		case 'version-view': {
+			const language = navigator.language || 'en-US';
+			const payload = await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}/view?lang=${encodeURIComponent(language)}`);
+			submitLaunchPayload(payload);
+			return;
+		}
 		case 'version-name-current': {
 			const nextName = window.prompt('Name the current version:');
 			if (!nextName) {
@@ -780,11 +831,6 @@ async function handleVersionAction(action, fileId, versionId) {
 				body: JSON.stringify({ label: nextName })
 			});
 			await renderVersionList(fileId);
-			return;
-		}
-		case 'version-compare': {
-			const payload = await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}/launch`);
-			submitLaunchPayload(payload);
 			return;
 		}
 		case 'version-restore':
@@ -1267,6 +1313,10 @@ async function showContextMenu(fileId, button) {
 			<button type="button" data-context-action="new-text" data-file-id="${documentEntry.id}">New text document</button>
 			<button type="button" data-context-action="new-spreadsheet" data-file-id="${documentEntry.id}">New spreadsheet</button>
 			<button type="button" data-context-action="new-presentation" data-file-id="${documentEntry.id}">New presentation</button>
+			<div class="context-menu-separator"></div>
+			<button type="button" data-context-action="new-microsoft-text" data-file-id="${documentEntry.id}">New Microsoft Word document</button>
+			<button type="button" data-context-action="new-microsoft-spreadsheet" data-file-id="${documentEntry.id}">New Microsoft Excel spreadsheet</button>
+			<button type="button" data-context-action="new-microsoft-presentation" data-file-id="${documentEntry.id}">New Microsoft PowerPoint presentation</button>
 		</div>` : ''}
 		<button type="button" data-context-action="download" data-file-id="${documentEntry.id}">Download</button>
 		<button type="button" data-context-action="rename" data-file-id="${documentEntry.id}">Rename</button>
@@ -1354,6 +1404,15 @@ async function handleContextMenuAction(action, fileId) {
 			return;
 		case 'new-presentation':
 			await createDocumentInDirectory('presentation', documentEntry?.relativePath || '');
+			return;
+		case 'new-microsoft-text':
+			await createDocumentInDirectory('microsoft-text', documentEntry?.relativePath || '');
+			return;
+		case 'new-microsoft-spreadsheet':
+			await createDocumentInDirectory('microsoft-spreadsheet', documentEntry?.relativePath || '');
+			return;
+		case 'new-microsoft-presentation':
+			await createDocumentInDirectory('microsoft-presentation', documentEntry?.relativePath || '');
 			return;
 		case 'new-folder':
 			await createFolderInDirectory(documentEntry?.relativePath || '');
@@ -1467,6 +1526,10 @@ function showNewDocumentMenu(button) {
 		<button type="button" data-context-action="new-text">New text document</button>
 		<button type="button" data-context-action="new-spreadsheet">New spreadsheet</button>
 		<button type="button" data-context-action="new-presentation">New presentation</button>
+		<div class="context-menu-separator"></div>
+		<button type="button" data-context-action="new-microsoft-text">New Microsoft Word document</button>
+		<button type="button" data-context-action="new-microsoft-spreadsheet">New Microsoft Excel spreadsheet</button>
+		<button type="button" data-context-action="new-microsoft-presentation">New Microsoft PowerPoint presentation</button>
 	`;
 	for (const menuButton of menu.querySelectorAll('[data-context-action]')) {
 		menuButton.addEventListener('click', function(event) {

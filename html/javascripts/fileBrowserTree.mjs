@@ -58,3 +58,14 @@ export function getFolderSelectionState(folderDocument, documents, selectedFileI
 
 	return { checked: selectedFileIds.has(folderDocument.id) };
 }
+
+export function getFolderSizeBytes(folderDocument, documents) {
+	if (!folderDocument || !folderDocument.isDirectory) {
+		return 0;
+	}
+
+	const prefix = `${folderDocument.relativePath}/`;
+	return documents
+		.filter((document) => !document.isDirectory && document.relativePath.startsWith(prefix))
+		.reduce((total, document) => total + Number(document.size || 0), 0);
+}

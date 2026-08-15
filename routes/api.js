@@ -57,13 +57,13 @@ function normalizeEditorMode(value) {
 }
 
 function getDocumentTypeName(type) {
-	if (type === 'text') {
+	if (type === 'text' || type === 'microsoft-text') {
 		return config.defaultTextDocumentName;
 	}
-	if (type === 'spreadsheet') {
+	if (type === 'spreadsheet' || type === 'microsoft-spreadsheet') {
 		return config.defaultSpreadsheetName;
 	}
-	if (type === 'presentation') {
+	if (type === 'presentation' || type === 'microsoft-presentation') {
 		return config.defaultPresentationName;
 	}
 	return null;
@@ -79,7 +79,7 @@ function mapDocumentListWithUserState(documents, userState) {
 	}));
 }
 
-async function buildLaunchPayload(req, document, mode, shareId) {
+async function buildLaunchPayload(req, document, mode, shareId, versionId) {
 	const user = getRequestUser(req);
 	const writePermission = mode === 'edit';
 	const actionUrl = await getActionUrl({
@@ -103,7 +103,8 @@ async function buildLaunchPayload(req, document, mode, shareId) {
 			userName: user.displayName,
 			canWrite: writePermission,
 			canRename: writePermission,
-			shareId: shareId || null
+			shareId: shareId || null,
+			versionId: versionId || null
 		}
 	});
 
@@ -418,6 +419,20 @@ router.post('/files/:fileId/versions/:versionId/restore', async function(req, re
 	}
 });
 
+router.get('/files/:fileId/versions/:versionId/view', async function(req, res, next) {
+	try {
+		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		if (document.isDirectory) {
+			throw createHttpError(404, 'Folders do not have version history.');
+		}
+		await getVersionEntry(config.documentRoot, req.params.fileId, req.params.versionId);
+		const launchPayload = await buildLaunchPayload(req, document, 'view', null, req.params.versionId);
+		res.json(launchPayload);
+	} catch (error) {
+		next(error);
+	}
+});
+
 router.patch('/files/:fileId/versions/:versionId', async function(req, res, next) {
 	try {
 		const document = await getDocumentById(config.documentRoot, req.params.fileId);
@@ -450,52 +465,6 @@ router.delete('/files/:fileId/versions/:versionId', async function(req, res, nex
 			versionId: req.params.versionId
 		});
 		res.status(204).end();
-	} catch (error) {
-		next(error);
-	}
-});
-
-router.get('/files/:fileId/versions/:versionId/launch', async function(req, res, next) {
-	try {
-		const document = await getDocumentById(config.documentRoot, req.params.fileId);
-		if (document.isDirectory) {
-			throw createHttpError(404, 'Folders do not have version history.');
-		}
-		await getVersionEntry(config.documentRoot, req.params.fileId, req.params.versionId);
-		const user = getRequestUser(req);
-		const actionUrl = await getActionUrl({
-			collaboraInternalUrl: config.collaboraInternalUrl,
-			collaboraPublicUrl: config.collaboraPublicUrl,
-			extension: document.extension,
-			mode: 'view'
-		});
-		const appBaseUrl = config.getAppBaseUrl(req);
-		const wopiSrc = `${appBaseUrl}/wopi/files/${encodeURIComponent(document.id)}`;
-		const launchUrl = appendQueryParameter(
-			appendQueryParameter(actionUrl, 'lang', req.query.lang || 'en-US'),
-			'WOPISrc',
-			wopiSrc
-		);
-		const accessToken = createAccessToken({
-			fileId: document.id,
-			secret: config.accessTokenSecret,
-			claims: {
-				userId: user.id,
-				userName: user.displayName,
-				canWrite: false,
-				canRename: false,
-				shareId: null,
-				versionId: req.params.versionId
-			}
-		});
-		res.json({
-			file: document,
-			mode: 'view',
-			versionId: req.params.versionId,
-			actionUrl: launchUrl,
-			accessToken: accessToken.token,
-			accessTokenTtl: accessToken.expiresAt
-		});
 	} catch (error) {
 		next(error);
 	}

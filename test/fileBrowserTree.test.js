@@ -76,3 +76,18 @@ test('getFolderSelectionState reflects direct folder selection only', function()
 		checked: true
 	});
 });
+
+test('getFolderSizeBytes sums all descendant files recursively', function() {
+	const documents = [
+		{ id: 'folder-1', name: 'archive', relativePath: 'archive', isDirectory: true },
+		{ id: 'folder-2', name: 'nested', relativePath: 'archive/nested', isDirectory: true },
+		{ id: 'file-1', name: 'a.txt', relativePath: 'archive/a.txt', isDirectory: false, size: 200 },
+		{ id: 'file-2', name: 'b.txt', relativePath: 'archive/nested/b.txt', isDirectory: false, size: 25 },
+		{ id: 'file-3', name: 'c.txt', relativePath: 'archive/nested/c.txt', isDirectory: false, size: 75 },
+		{ id: 'file-4', name: 'outside.txt', relativePath: 'outside.txt', isDirectory: false, size: 999 }
+	];
+
+	assert.equal(treeHelpers.getFolderSizeBytes(documents[0], documents), 300);
+	assert.equal(treeHelpers.getFolderSizeBytes(documents[1], documents), 100);
+	assert.equal(treeHelpers.getFolderSizeBytes(documents[4], documents), 0);
+});
