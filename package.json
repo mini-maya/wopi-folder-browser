@@ -8,12 +8,13 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
+    "@xmldom/xmldom": "^0.8.0",
     "body-parser": "^1.19.0",
     "cookie-parser": "~1.4.4",
     "debug": "~2.6.9",
     "express": "~4.22",
     "morgan": "~1.10",
-    "@xmldom/xmldom": "^0.8.0",
+    "multer": "^2.2.0",
     "xpath": "0.0.32"
   },
   "bugs": {

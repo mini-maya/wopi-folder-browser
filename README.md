@@ -17,6 +17,7 @@ This project is a small WOPI host for Collabora Online CODE. It lists Office fil
 - supports **Open/Edit/View** launch modes and public share links
 - supports creating new text/spreadsheet/presentation files and optional template-based creation
 - supports rename/move/copy/delete, favorites, recent files, and version history restore
+- supports file uploads into the root folder or a selected folder, including drag-and-drop of files and folders
 - exposes feature matrix, diagnostics, and supported-format endpoints
 - runs together with a Collabora CODE container via Docker Compose
 

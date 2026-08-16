@@ -21,6 +21,7 @@ const elements = {
 	viewerFrame: document.querySelector('#collabora-online-viewer'),
 	refreshButton: document.querySelector('#refresh-button'),
 	newMenuButton: document.querySelector('#new-menu-button'),
+	uploadButton: document.querySelector('#upload-button'),
 	themeSelect: document.querySelector('#theme-select'),
 	searchInput: document.querySelector('#search-input'),
 	collaboraForm: document.querySelector('#collabora-submit-form'),
@@ -32,7 +33,18 @@ const elements = {
 	folderPickerTarget: document.querySelector('#folder-picker-target'),
 	folderPickerName: document.querySelector('#folder-picker-name'),
 	folderPickerTitle: document.querySelector('#folder-picker-title'),
-	folderPickerConfirm: document.querySelector('#folder-picker-confirm')
+	folderPickerConfirm: document.querySelector('#folder-picker-confirm'),
+	uploadModal: document.querySelector('#upload-modal'),
+	uploadModalTitle: document.querySelector('#upload-modal-title'),
+	uploadTargetLabel: document.querySelector('#upload-target-label'),
+	uploadFileInput: document.querySelector('#upload-file-input'),
+	uploadChooseButton: document.querySelector('#upload-choose-button'),
+	uploadDropzone: document.querySelector('#upload-dropzone'),
+	uploadSelectionSummary: document.querySelector('#upload-selection-summary'),
+	uploadSelectionList: document.querySelector('#upload-selection-list'),
+	uploadErrors: document.querySelector('#upload-errors'),
+	uploadCancel: document.querySelector('#upload-cancel'),
+	uploadConfirm: document.querySelector('#upload-confirm')
 };
 
 const appState = {
@@ -48,6 +60,11 @@ const appState = {
 	contextMenuFileId: null,
 	bulkActionsMenuOpen: false,
 	newDocumentMenuOpen: false,
+	uploadTargetDirectory: '',
+	uploadItems: [],
+	uploadErrors: [],
+	uploadBusy: false,
+	uploadDragActive: false,
 	viewerOpen: false,
 	viewerPanelWidth: 800,
 	isResizingViewer: false
@@ -199,6 +216,36 @@ function formatDate(isoDate) {
 		dateStyle: 'medium',
 		timeStyle: 'short'
 	}).format(new Date(isoDate));
+}
+
+function normalizeUploadRelativePath(value) {
+	return String(value || '')
+		.replace(/\\/g, '/')
+		.split('/')
+		.filter(Boolean)
+		.join('/');
+}
+
+function buildUploadDestinationPath(relativePath, targetDirectory) {
+	const normalizedRelativePath = normalizeUploadRelativePath(relativePath);
+	const normalizedTargetDirectory = normalizeUploadRelativePath(targetDirectory);
+	if (!normalizedTargetDirectory) {
+		return normalizedRelativePath;
+	}
+	if (!normalizedRelativePath) {
+		return normalizedTargetDirectory;
+	}
+	return `${normalizedTargetDirectory}/${normalizedRelativePath}`;
+}
+
+function getUploadTargetLabel() {
+	return appState.uploadTargetDirectory || 'Root folder';
+}
+
+function getUploadSummaryLabel(count) {
+	return count === 0
+		? 'No files selected yet.'
+		: `${count} file${count === 1 ? '' : 's'} ready to upload.`;
 }
 
 function renderEmptyState(message = 'No supported documents or folders found. Create one with the New... menu.') {
@@ -1236,6 +1283,254 @@ async function submitFolderTargetDialog(event) {
 		: (action === 'move' ? 'Entry moved.' : 'Entry copied.'));
 }
 
+function renderUploadDialog() {
+	const uploadCount = appState.uploadItems.length;
+	elements.uploadTargetLabel.textContent = getUploadTargetLabel();
+	elements.uploadSelectionSummary.textContent = getUploadSummaryLabel(uploadCount);
+	elements.uploadConfirm.disabled = uploadCount === 0 || appState.uploadBusy;
+	elements.uploadChooseButton.disabled = appState.uploadBusy;
+	elements.uploadCancel.disabled = appState.uploadBusy;
+	elements.uploadConfirm.textContent = appState.uploadBusy ? 'Uploading...' : 'Upload';
+	elements.uploadDropzone.classList.toggle('drag-active', appState.uploadDragActive);
+	elements.uploadDropzone.classList.toggle('is-busy', appState.uploadBusy);
+
+	if (uploadCount === 0) {
+		elements.uploadSelectionList.innerHTML = '<li class="upload-list-empty">Choose files or drop them here.</li>';
+	} else {
+		elements.uploadSelectionList.innerHTML = appState.uploadItems.map((item) => `
+			<li class="upload-selection-item">
+				<strong>${escapeHtml(item.relativePath)}</strong>
+				<span>${formatBytes(item.file.size)}</span>
+			</li>
+		`).join('');
+	}
+
+	if (appState.uploadErrors.length === 0) {
+		elements.uploadErrors.classList.add('hidden');
+		elements.uploadErrors.innerHTML = '';
+		return;
+	}
+
+	elements.uploadErrors.classList.remove('hidden');
+	elements.uploadErrors.innerHTML = `
+		<strong>Upload problems</strong>
+		<ul>
+			${appState.uploadErrors.map((entry) => `<li>${escapeHtml(entry.relativePath ? `${entry.relativePath}: ${entry.message}` : entry.message)}</li>`).join('')}
+		</ul>
+	`;
+}
+
+function openUploadDialog(targetDirectory = '') {
+	closeOpenContextMenu();
+	appState.uploadTargetDirectory = targetDirectory || '';
+	appState.uploadItems = [];
+	appState.uploadErrors = [];
+	appState.uploadBusy = false;
+	appState.uploadDragActive = false;
+	elements.uploadFileInput.value = '';
+	elements.uploadModalTitle.textContent = appState.uploadTargetDirectory ? 'Upload to folder' : 'Upload to root folder';
+	elements.uploadModal.classList.remove('hidden');
+	elements.uploadModal.setAttribute('aria-hidden', 'false');
+	renderUploadDialog();
+	elements.uploadChooseButton.focus();
+}
+
+function closeUploadDialog() {
+	if (appState.uploadBusy) {
+		return;
+	}
+
+	appState.uploadTargetDirectory = '';
+	appState.uploadItems = [];
+	appState.uploadErrors = [];
+	appState.uploadBusy = false;
+	appState.uploadDragActive = false;
+	elements.uploadFileInput.value = '';
+	elements.uploadModal.classList.add('hidden');
+	elements.uploadModal.setAttribute('aria-hidden', 'true');
+}
+
+function appendUploadItems(items) {
+	const normalizedItems = items
+		.map((item) => ({
+			file: item.file,
+			relativePath: normalizeUploadRelativePath(item.relativePath || item.file?.webkitRelativePath || item.file?.name)
+		}))
+		.filter((item) => item.file && item.relativePath);
+
+	if (normalizedItems.length === 0) {
+		appState.uploadErrors = [{ relativePath: '', message: 'The dropped items did not contain any files.' }];
+		renderUploadDialog();
+		return;
+	}
+
+	appState.uploadItems = appState.uploadItems.concat(normalizedItems);
+	appState.uploadErrors = [];
+	renderUploadDialog();
+}
+
+function readFileSystemEntry(entry, relativePath) {
+	if (entry.isFile) {
+		return new Promise((resolve, reject) => {
+			entry.file((file) => {
+				resolve([{
+					file: file,
+					relativePath: relativePath
+				}]);
+			}, reject);
+		});
+	}
+
+	if (!entry.isDirectory) {
+		return Promise.resolve([]);
+	}
+
+	return readDirectoryEntries(entry).then(async function(entries) {
+		let collectedItems = [];
+		for (const childEntry of entries) {
+			const childPath = relativePath ? `${relativePath}/${childEntry.name}` : childEntry.name;
+			collectedItems = collectedItems.concat(await readFileSystemEntry(childEntry, childPath));
+		}
+		return collectedItems;
+	});
+}
+
+function readDirectoryEntries(directoryEntry) {
+	const reader = directoryEntry.createReader();
+	const entries = [];
+
+	return new Promise((resolve, reject) => {
+		function readNextBatch() {
+			reader.readEntries(function(batch) {
+				if (!batch.length) {
+					resolve(entries);
+					return;
+				}
+				entries.push(...batch);
+				readNextBatch();
+			}, reject);
+		}
+
+		readNextBatch();
+	});
+}
+
+async function collectDroppedUploadItems(dataTransfer) {
+	if (dataTransfer.items && dataTransfer.items.length > 0) {
+		const fileItems = Array.from(dataTransfer.items).filter((item) => item.kind === 'file');
+		const entries = fileItems
+			.map((item) => item.webkitGetAsEntry ? item.webkitGetAsEntry() : null)
+			.filter(Boolean);
+		if (entries.length > 0) {
+			let collectedItems = [];
+			for (const entry of entries) {
+				collectedItems = collectedItems.concat(await readFileSystemEntry(entry, entry.name));
+			}
+			return collectedItems;
+		}
+	}
+
+	return Array.from(dataTransfer.files || []).map((file) => ({
+		file: file,
+		relativePath: file.webkitRelativePath || file.name
+	}));
+}
+
+function handleUploadFileSelection(files) {
+	const selectedFiles = Array.from(files || []);
+	if (selectedFiles.length === 0) {
+		return;
+	}
+
+	appendUploadItems(selectedFiles.map((file) => ({
+		file: file,
+		relativePath: file.webkitRelativePath || file.name
+	})));
+}
+
+async function handleUploadDrop(event) {
+	event.preventDefault();
+	if (appState.uploadBusy) {
+		return;
+	}
+
+	appState.uploadDragActive = false;
+	try {
+		const items = await collectDroppedUploadItems(event.dataTransfer);
+		appendUploadItems(items);
+	} catch (error) {
+		appState.uploadErrors = [{ relativePath: '', message: error.message }];
+		renderUploadDialog();
+	}
+}
+
+async function submitUploadDialog() {
+	if (appState.uploadBusy || appState.uploadItems.length === 0) {
+		return;
+	}
+
+	appState.uploadBusy = true;
+	appState.uploadErrors = [];
+	renderUploadDialog();
+
+	try {
+		const formData = new FormData();
+		formData.append('directory', appState.uploadTargetDirectory);
+		formData.append('relativePaths', JSON.stringify(appState.uploadItems.map((item) => item.relativePath)));
+		for (const item of appState.uploadItems) {
+			formData.append('files', item.file, item.file.name);
+		}
+
+		const response = await fetch('/api/uploads', {
+			method: 'POST',
+			body: formData
+		});
+		const payload = await response.json().catch(() => null);
+
+		if (!response.ok) {
+			throw new Error(payload?.error ?? `Request failed with status ${response.status}.`);
+		}
+
+		const uploadedFiles = Array.isArray(payload?.files) ? payload.files : [];
+		const uploadErrors = Array.isArray(payload?.errors) ? payload.errors : [];
+		const uploadedPaths = new Set(uploadedFiles.map((entry) => entry.relativePath));
+		appState.uploadItems = appState.uploadItems.filter((item) => !uploadedPaths.has(buildUploadDestinationPath(item.relativePath, appState.uploadTargetDirectory)));
+
+		if (uploadedFiles.length > 0) {
+			await loadPage();
+		}
+
+		if (uploadErrors.length === 0 && uploadedFiles.length > 0) {
+			closeUploadDialog();
+			setStatus(`Uploaded ${uploadedFiles.length} file${uploadedFiles.length === 1 ? '' : 's'}.`);
+			return;
+		}
+
+		appState.uploadErrors = uploadErrors.map((entry) => ({
+			relativePath: entry.relativePath || '',
+			message: entry.message || 'Upload failed.'
+		}));
+		if (appState.uploadErrors.length === 0) {
+			appState.uploadErrors = [{ relativePath: '', message: 'No files were uploaded.' }];
+		}
+		setStatus(
+			uploadedFiles.length > 0
+				? `Uploaded ${uploadedFiles.length} file${uploadedFiles.length === 1 ? '' : 's'}; some items were skipped.`
+				: 'Upload completed with errors.',
+			true
+		);
+	} catch (error) {
+		appState.uploadErrors = [{
+			relativePath: '',
+			message: error.message
+		}];
+		setStatus(error.message, true);
+	} finally {
+		appState.uploadBusy = false;
+		renderUploadDialog();
+	}
+}
+
 async function moveDocuments(documents, targetDirectory) {
 	for (const document of documents) {
 		await requestJson(`/api/files/${encodeURIComponent(document.id)}/move`, {
@@ -1401,7 +1696,8 @@ async function showContextMenu(fileId, button) {
 	menu.innerHTML = `
 		<button type="button" data-context-action="details" data-file-id="${documentEntry.id}">Details</button>
 		<button type="button" data-context-action="favorite" data-file-id="${documentEntry.id}">${documentEntry.favorite ? 'Remove from favorites' : 'Add to favorites'}</button>
-		${isFolder ? `<button type="button" data-context-action="new-document" data-file-id="${documentEntry.id}" class="has-submenu">New...</button>
+		${isFolder ? `<button type="button" data-context-action="upload" data-file-id="${documentEntry.id}">Upload...</button>
+		<button type="button" data-context-action="new-document" data-file-id="${documentEntry.id}" class="has-submenu">New...</button>
 		<div class="context-menu-submenu hidden" data-submenu="new-document" aria-label="New document submenu">
 			<button type="button" data-context-action="new-folder" data-file-id="${documentEntry.id}">New folder</button>
 			<div class="context-menu-separator"></div>
@@ -1488,6 +1784,9 @@ async function handleContextMenuAction(action, fileId) {
 			return;
 		case 'details':
 			openDetailsPanel(fileId);
+			return;
+		case 'upload':
+			openUploadDialog(documentEntry?.relativePath || '');
 			return;
 		case 'new-document':
 			return;
@@ -1661,6 +1960,11 @@ event.preventDefault();
 event.stopPropagation();
 toggleNewDocumentMenu(elements.newMenuButton);
 });
+elements.uploadButton.addEventListener('click', function(event) {
+event.preventDefault();
+event.stopPropagation();
+openUploadDialog('');
+});
 elements.bulkActionsMenuButton.addEventListener('click', function(event) {
 event.preventDefault();
 event.stopPropagation();
@@ -1675,6 +1979,56 @@ elements.folderPickerForm.addEventListener('submit', submitFolderTargetDialog);
 elements.folderPickerModal.addEventListener('click', function(event) {
 if (event.target === elements.folderPickerModal) {
 	closeFolderTargetDialog();
+}
+});
+elements.uploadChooseButton.addEventListener('click', function(event) {
+event.preventDefault();
+event.stopPropagation();
+if (appState.uploadBusy) {
+	return;
+}
+elements.uploadFileInput.click();
+});
+elements.uploadFileInput.addEventListener('change', function(event) {
+handleUploadFileSelection(event.target.files);
+event.target.value = '';
+});
+elements.uploadDropzone.addEventListener('click', function() {
+if (appState.uploadBusy) {
+	return;
+}
+elements.uploadFileInput.click();
+});
+elements.uploadDropzone.addEventListener('keydown', function(event) {
+if (appState.uploadBusy) {
+	return;
+}
+if (event.key === 'Enter' || event.key === ' ') {
+	event.preventDefault();
+	elements.uploadFileInput.click();
+}
+});
+elements.uploadDropzone.addEventListener('dragover', function(event) {
+event.preventDefault();
+if (appState.uploadBusy) {
+	return;
+}
+appState.uploadDragActive = true;
+renderUploadDialog();
+});
+elements.uploadDropzone.addEventListener('dragleave', function(event) {
+if (elements.uploadDropzone.contains(event.relatedTarget)) {
+	return;
+}
+appState.uploadDragActive = false;
+renderUploadDialog();
+});
+elements.uploadDropzone.addEventListener('drop', handleUploadDrop);
+elements.uploadCancel.addEventListener('click', closeUploadDialog);
+elements.uploadConfirm.addEventListener('click', submitUploadDialog);
+elements.uploadModal.addEventListener('click', function(event) {
+if (event.target === elements.uploadModal) {
+	closeUploadDialog();
 }
 });
 document.addEventListener('click', function(event) {

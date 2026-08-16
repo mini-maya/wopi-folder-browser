@@ -2,6 +2,7 @@
 
 const express = require('express');
 const fs = require('fs/promises');
+const multer = require('multer');
 
 const config = require('../lib/config');
 const { createAccessToken } = require('../lib/accessToken');
@@ -15,7 +16,8 @@ const {
 	getDocumentById,
 	listDocuments,
 	renameOrMoveDocument,
-	SUPPORTED_MIME_TYPES
+	SUPPORTED_MIME_TYPES,
+	uploadDocuments
 } = require('../lib/documentStore');
 const { createHttpError } = require('../lib/errors');
 const { createDocumentsZip, createFolderZip } = require('../lib/folderZip');
@@ -27,6 +29,7 @@ const { deleteVersion, getVersionEntry, listVersions, renameVersion, restoreVers
 const { invalidatePreview } = require('../lib/previewStore');
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 const FEATURE_MATRIX = [
 	{ feature: 'Office Editor (Writer/Calc/Impress)', category: 1, note: 'Handled by Collabora via discovery action URL.' },
@@ -315,6 +318,56 @@ router.post('/folders', async function(req, res, next) {
 			userName: user.displayName
 		});
 		res.status(201).json({ folder: folder });
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.post('/uploads', upload.array('files'), async function(req, res, next) {
+	try {
+		if (!config.allowDocumentCreation) {
+			throw createHttpError(403, 'Uploads are disabled.');
+		}
+
+		let relativePaths = [];
+		if (req.body.relativePaths) {
+			try {
+				const parsedRelativePaths = JSON.parse(req.body.relativePaths);
+				if (!Array.isArray(parsedRelativePaths)) {
+					throw new Error('relativePaths must be an array.');
+				}
+				relativePaths = parsedRelativePaths.map((entry) => String(entry || ''));
+			} catch (error) {
+				throw createHttpError(400, 'Upload metadata is invalid.');
+			}
+		}
+
+		const uploadEntries = (req.files || []).map((file, index) => ({
+			fileName: file.originalname,
+			relativePath: relativePaths[index] || file.originalname,
+			content: file.buffer
+		}));
+		const result = await uploadDocuments(config.documentRoot, {
+			directory: req.body.directory,
+			files: uploadEntries
+		});
+		const user = getRequestUser(req);
+
+		for (const document of result.uploadedDocuments) {
+			await appendActivity(config.documentRoot, {
+				type: 'upload',
+				fileId: document.id,
+				fileName: document.name,
+				userId: user.id,
+				userName: user.displayName
+			});
+			await invalidatePreview(config.documentRoot, document);
+		}
+
+		res.status(result.errors.length === 0 ? 201 : 200).json({
+			files: result.uploadedDocuments,
+			errors: result.errors
+		});
 	} catch (error) {
 		next(error);
 	}

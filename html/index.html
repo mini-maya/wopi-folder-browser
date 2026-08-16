@@ -73,6 +73,7 @@
      <div id="bulk-actions" class="bulk-actions">
        <div class="bulk-actions-primary">
          <button id="new-menu-button" type="button" class="secondary menu-button" aria-haspopup="menu" aria-expanded="false">New...</button>
+         <button id="upload-button" type="button" class="secondary">Upload...</button>
        </div>
        <div class="bulk-actions-secondary">
          <span id="selection-summary" class="hidden">0 selected</span>
@@ -132,6 +133,39 @@
          <button type="submit" id="folder-picker-confirm">Continue</button>
        </div>
      </form>
+   </div>
+ </div>
+
+ <div id="upload-modal" class="modal hidden" aria-hidden="true">
+   <div class="modal-card upload-modal-card" role="dialog" aria-modal="true" aria-labelledby="upload-modal-title">
+     <div class="modal-header">
+       <div>
+         <h3 id="upload-modal-title">Upload files</h3>
+         <p id="upload-target-label" class="modal-description">Root folder</p>
+       </div>
+       <button id="upload-cancel" type="button" class="secondary">Cancel</button>
+     </div>
+     <div class="modal-body">
+       <input id="upload-file-input" type="file" multiple class="hidden">
+       <div id="upload-dropzone" class="upload-dropzone" tabindex="0" role="button" aria-label="Choose files or drop files and folders">
+         <strong>Drop files or folders here</strong>
+         <p>or choose files from your device</p>
+         <button id="upload-choose-button" type="button" class="secondary">Select files...</button>
+       </div>
+       <div class="upload-selection">
+         <div class="upload-selection-header">
+           <strong>Selected items</strong>
+           <span id="upload-selection-summary">No files selected yet.</span>
+         </div>
+         <ul id="upload-selection-list" class="upload-selection-list">
+           <li class="upload-list-empty">Choose files or drop them here.</li>
+         </ul>
+       </div>
+       <div id="upload-errors" class="upload-errors hidden" aria-live="polite"></div>
+       <div class="modal-actions">
+         <button id="upload-confirm" type="button" disabled>Upload</button>
+       </div>
+     </div>
    </div>
  </div>
 

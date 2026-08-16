@@ -614,6 +614,11 @@ tbody tr.selected-row {
   margin: 0;
 }
 
+.modal-description {
+  margin: 0.35rem 0 0;
+  color: var(--muted-text);
+}
+
 .modal-body {
   display: grid;
   gap: 1rem;
@@ -645,6 +650,118 @@ tbody tr.selected-row {
 .modal-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.upload-modal-card {
+  width: min(38rem, 100%);
+}
+
+.upload-dropzone {
+  display: grid;
+  justify-items: center;
+  gap: 0.6rem;
+  padding: 1.5rem;
+  border: 2px dashed var(--border-default);
+  border-radius: 16px;
+  background: var(--surface-subtle);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.upload-dropzone:hover,
+.upload-dropzone:focus-visible,
+.upload-dropzone.drag-active {
+  border-color: var(--primary);
+  background: rgba(15, 98, 254, 0.08);
+}
+
+.upload-dropzone.is-busy {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.upload-dropzone strong,
+.upload-selection-header strong {
+  font-size: 1rem;
+}
+
+.upload-dropzone p {
+  margin: 0;
+  color: var(--muted-text);
+}
+
+.upload-selection {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.upload-selection-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: baseline;
+}
+
+.upload-selection-header span {
+  color: var(--muted-text);
+}
+
+.upload-selection-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.upload-selection-item,
+.upload-list-empty {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+}
+
+.upload-list-empty {
+  color: var(--muted-text);
+}
+
+.upload-selection-item strong {
+  display: block;
+  word-break: break-word;
+}
+
+.upload-selection-item span {
+  color: var(--muted-text);
+  white-space: nowrap;
+}
+
+.upload-errors {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: var(--status-error-bg);
+  color: var(--status-error-text);
+}
+
+.upload-errors strong {
+  font-size: 0.95rem;
+}
+
+.upload-errors ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.upload-errors li {
+  word-break: break-word;
 }
 
 .details-card {

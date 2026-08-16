@@ -14,7 +14,8 @@ const {
 	deleteDocument,
 	getDocumentById,
 	listDocuments,
-	renameOrMoveDocument
+	renameOrMoveDocument,
+	uploadDocuments
 } = require('../lib/documentStore');
 const { getStateRoot } = require('../lib/statePaths');
 
@@ -157,6 +158,68 @@ test('deleteDocument removes folders recursively', async function() {
 
 	const afterDelete = await listDocuments(tempRoot);
 	assert.deepEqual(afterDelete, []);
+});
+
+test('uploadDocuments stores supported files and preserves dropped folder structure', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await createFolder(tempRoot, { folderName: 'inbox' });
+
+	const result = await uploadDocuments(tempRoot, {
+		directory: 'inbox',
+		files: [
+			{ fileName: 'report.docx', relativePath: 'report.docx', content: Buffer.from('report') },
+			{ fileName: 'sheet.xlsx', relativePath: 'quarterly/sheet.xlsx', content: Buffer.from('sheet') }
+		]
+	});
+
+	assert.equal(result.errors.length, 0);
+	assert.deepEqual(
+		result.uploadedDocuments.map((document) => document.relativePath),
+		['inbox/report.docx', 'inbox/quarterly/sheet.xlsx']
+	);
+
+	const listedDocuments = await listDocuments(tempRoot);
+	assert.ok(listedDocuments.some((entry) => entry.relativePath === 'inbox/report.docx'));
+	assert.ok(listedDocuments.some((entry) => entry.relativePath === 'inbox/quarterly'));
+	assert.ok(listedDocuments.some((entry) => entry.relativePath === 'inbox/quarterly/sheet.xlsx'));
+});
+
+test('uploadDocuments skips unsupported and conflicting files while keeping supported ones', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await fs.writeFile(path.join(tempRoot, 'existing.odt'), 'existing');
+
+	const result = await uploadDocuments(tempRoot, {
+		files: [
+			{ fileName: 'existing.odt', relativePath: 'existing.odt', content: Buffer.from('new content') },
+			{ fileName: 'notes.txt', relativePath: 'folder/notes.txt', content: Buffer.from('notes') },
+			{ fileName: 'photo.jpg', relativePath: 'folder/photo.jpg', content: Buffer.from('image') }
+		]
+	});
+
+	assert.deepEqual(
+		result.uploadedDocuments.map((document) => document.relativePath),
+		['folder/notes.txt']
+	);
+	assert.deepEqual(
+		result.errors.map((entry) => [entry.relativePath, entry.message]),
+		[
+			['existing.odt', 'The target path already exists.'],
+			['folder/photo.jpg', 'The file type is not supported.']
+		]
+	);
+});
+
+test('uploadDocuments rejects an unknown target folder', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+
+	await assert.rejects(function() {
+		return uploadDocuments(tempRoot, {
+			directory: 'missing-folder',
+			files: [
+				{ fileName: 'report.odt', relativePath: 'report.odt', content: Buffer.from('report') }
+			]
+		});
+	}, /The target folder does not exist/);
 });
 
 test('getStateRoot uses a dedicated state directory when configured', function() {
