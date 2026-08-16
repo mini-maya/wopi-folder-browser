@@ -57,6 +57,7 @@ const appState = {
 	folderPickerAction: null,
 	folderPickerSelectionIds: [],
 	folderPickerBulkMode: false,
+	versionRenameId: null,
 	contextMenuFileId: null,
 	bulkActionsMenuOpen: false,
 	newDocumentMenuOpen: false,
@@ -915,16 +916,16 @@ async function handleVersionAction(action, fileId, versionId) {
 	}
 	switch (action) {
 		case 'version-rename': {
-			const nextName = window.prompt('Rename this version:');
-			if (!nextName) {
-				return;
-			}
-			await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ label: nextName })
+			const initialName = await getVersionLabel(fileId, versionId);
+			openNameEntryDialog({
+				action: 'version-rename',
+				title: 'Rename this version',
+				buttonText: 'Save',
+				defaultValue: initialName || '',
+				fileId,
+				directory: '',
+				versionId
 			});
-			await renderVersionList(fileId);
 			return;
 		}
 		case 'version-view': {
@@ -934,16 +935,16 @@ async function handleVersionAction(action, fileId, versionId) {
 			return;
 		}
 		case 'version-name-current': {
-			const nextName = window.prompt('Name the current version:');
-			if (!nextName) {
-				return;
-			}
-			await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ label: nextName })
+			const initialName = await getVersionLabel(fileId, versionId);
+			openNameEntryDialog({
+				action: 'version-name-current',
+				title: 'Name the current version',
+				buttonText: 'Save',
+				defaultValue: initialName || '',
+				fileId,
+				directory: '',
+				versionId
 			});
-			await renderVersionList(fileId);
 			return;
 		}
 		case 'version-restore':
@@ -1082,10 +1083,6 @@ async function openDocument(fileId, mode) {
 	}
 }
 
-async function createDocument(type) {
-	return createDocumentInDirectory(type, '');
-}
-
 async function createDocumentInDirectory(type, directory) {
 	setStatus(`Creating ${type} document...`);
 	try {
@@ -1106,53 +1103,44 @@ async function createDocumentInDirectory(type, directory) {
 	}
 }
 
-async function createFolder() {
-	return createFolderInDirectory('');
-}
-
 async function createFolderInDirectory(directory) {
-	setStatus('Creating folder...');
-	const folderName = window.prompt('Folder name:');
-	if (!folderName) {
-		return;
-	}
-
-	try {
-		await requestJson('/api/folders', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				directory: directory || undefined,
-				folderName: folderName
-			})
-		});
-		await loadPage();
-		setStatus('Folder created.');
-	} catch (error) {
-		setStatus(error.message, true);
-	}
+	openNameEntryDialog({
+		action: 'new-folder',
+		title: 'Create new folder',
+		buttonText: 'Create folder',
+		defaultValue: '',
+		directory: directory || '',
+		fileId: null
+	});
 }
 
 async function renameDocument(fileId, nextNameOverride) {
 	const document = getDocumentById(fileId);
-	const promptLabel = isFolderEntry(document)
-		? 'New folder name:'
-		: 'New file name (with extension):';
-	const nextName = nextNameOverride || window.prompt(promptLabel, document?.name ?? '');
-	if (!nextName) {
+	if (!document) {
+		setStatus('The entry could not be found.', true);
+		return;
+	}
+	if (!nextNameOverride) {
+		openNameEntryDialog({
+			action: 'rename',
+			title: isFolderEntry(document) ? 'Rename folder' : 'Rename file',
+			buttonText: 'Rename',
+			defaultValue: document.name,
+			fileId,
+			directory: ''
+		});
 		return;
 	}
 	await requestJson(`/api/files/${encodeURIComponent(fileId)}/move`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ targetName: nextName })
+		body: JSON.stringify({ targetName: nextNameOverride })
 	});
 }
 
 async function moveDocument(fileId, targetNameOverride, targetDirectoryOverride) {
-	const document = getDocumentById(fileId);
-	const targetName = targetNameOverride || window.prompt(isFolderEntry(document) ? 'Move folder as:' : 'Move name (with extension):', document?.name ?? '');
-	if (!targetName) {
+	if (!targetNameOverride) {
+		setStatus('A target name is required for this move operation.', true);
 		return;
 	}
 	await requestJson(`/api/files/${encodeURIComponent(fileId)}/move`, {
@@ -1160,15 +1148,14 @@ async function moveDocument(fileId, targetNameOverride, targetDirectoryOverride)
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
 			targetDirectory: targetDirectoryOverride,
-			targetName: targetName || undefined
+			targetName: targetNameOverride || undefined
 		})
 	});
 }
 
 async function copyDocument(fileId, targetNameOverride, targetDirectoryOverride) {
-	const document = getDocumentById(fileId);
-	const targetName = targetNameOverride || window.prompt(isFolderEntry(document) ? 'Copy folder as:' : 'Copy name (with extension):', document?.name ?? '');
-	if (!targetName) {
+	if (!targetNameOverride) {
+		setStatus('A target name is required for this copy operation.', true);
 		return;
 	}
 	await requestJson(`/api/files/${encodeURIComponent(fileId)}/copy`, {
@@ -1176,7 +1163,7 @@ async function copyDocument(fileId, targetNameOverride, targetDirectoryOverride)
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
 			targetDirectory: targetDirectoryOverride,
-			targetName: targetName || undefined
+			targetName: targetNameOverride || undefined
 		})
 	});
 }
@@ -1204,6 +1191,65 @@ function populateFolderPicker(document, preferRoot = false) {
 	elements.folderPickerName.value = document?.name ?? '';
 }
 
+function selectBasenameForInput(input, value) {
+	if (!input || !value) {
+		return;
+	}
+	const fileName = value.trim();
+	const parsedName = fileName.includes('.') ? fileName.slice(0, fileName.lastIndexOf('.')) : fileName;
+	if (!parsedName || fileName.startsWith('.')) {
+		return;
+	}
+	const start = 0;
+	const end = parsedName.length;
+	input.setSelectionRange(start, end);
+}
+
+async function getVersionLabel(fileId, versionId) {
+	const payload = await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions`);
+	const version = payload.versions.find((entry) => entry.id === versionId);
+	return version?.label ?? '';
+}
+
+function openNameEntryDialog({ action, title, buttonText, defaultValue, fileId, directory, versionId }) {
+	const documentEntry = fileId ? getDocumentById(fileId) : null;
+	const needsTargetDirectory = action === 'new-folder' || action === 'save-as';
+	appState.folderPickerAction = action;
+	appState.folderPickerSelectionIds = fileId ? [fileId] : [];
+	appState.folderPickerBulkMode = false;
+	appState.versionRenameId = versionId ?? null;
+	elements.folderPickerModal.classList.remove('hidden');
+	elements.folderPickerModal.setAttribute('aria-hidden', 'false');
+	elements.folderPickerTitle.textContent = title;
+	elements.folderPickerConfirm.textContent = buttonText;
+	elements.folderPickerTarget.closest('.modal-field').classList.toggle('hidden', !needsTargetDirectory);
+	if (needsTargetDirectory) {
+		const options = getFolderOptions();
+		elements.folderPickerTarget.innerHTML = options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('');
+		const preferredTarget = directory || (documentEntry && documentEntry.relativePath.includes('/')
+			? documentEntry.relativePath.slice(0, documentEntry.relativePath.lastIndexOf('/'))
+			: '');
+		elements.folderPickerTarget.value = options.some((option) => option.value === preferredTarget) ? preferredTarget : '';
+	} else {
+		elements.folderPickerTarget.innerHTML = '';
+	}
+	elements.folderPickerName.value = defaultValue ?? '';
+	elements.folderPickerName.focus();
+	prepareFolderPickerNameSelection();
+}
+
+function prepareFolderPickerNameSelection() {
+	if (!appState.folderPickerAction) {
+		return;
+	}
+	const selectedDocument = appState.folderPickerSelectionIds[0]
+		? getDocumentById(appState.folderPickerSelectionIds[0])
+		: null;
+	if (appState.folderPickerAction === 'save-as' || (selectedDocument && !isFolderEntry(selectedDocument))) {
+		selectBasenameForInput(elements.folderPickerName, elements.folderPickerName.value);
+	}
+}
+
 function openFolderTargetDialog(action, fileIds) {
 	const selectionIds = Array.isArray(fileIds) ? fileIds : [fileIds];
 	const selectedDocuments = selectionIds
@@ -1219,68 +1265,137 @@ function openFolderTargetDialog(action, fileIds) {
 	appState.folderPickerBulkMode = isBulkMode;
 	elements.folderPickerModal.classList.remove('hidden');
 	elements.folderPickerModal.setAttribute('aria-hidden', 'false');
-	elements.folderPickerConfirm.textContent = action === 'move' ? 'Move' : 'Copy';
+	elements.folderPickerConfirm.textContent = action === 'move' ? 'Move' : (action === 'save-as' ? 'Save' : 'Copy');
 	elements.folderPickerTitle.textContent = isBulkMode
-		? (action === 'move' ? 'Move selected items to folder' : 'Copy selected items to folder')
-		: (action === 'move' ? 'Move to folder' : 'Copy to folder');
+		? (action === 'move' ? 'Move selected items to folder' : (action === 'save-as' ? 'Save selected item as' : 'Copy selected items to folder'))
+		: (action === 'move' ? 'Move to folder' : (action === 'save-as' ? 'Save copy as' : 'Copy to folder'));
 	elements.folderPickerName.closest('.modal-field').classList.toggle('hidden', isBulkMode);
-	populateFolderPicker(selectedDocuments[0], isBulkMode);
+	populateFolderPicker(selectedDocuments[0], action === 'save-as' ? false : isBulkMode);
+	if (action === 'save-as') {
+		elements.folderPickerTarget.value = selectedDocuments[0]?.relativePath.includes('/')
+			? selectedDocuments[0].relativePath.slice(0, selectedDocuments[0].relativePath.lastIndexOf('/'))
+			: '';
+		elements.folderPickerName.value = selectedDocuments[0]?.name ?? '';
+	}
 	if (isBulkMode) {
 		elements.folderPickerTarget.focus();
 	} else {
 		elements.folderPickerName.focus();
 	}
+	prepareFolderPickerNameSelection();
 }
 
 function closeFolderTargetDialog() {
 	appState.folderPickerAction = null;
 	appState.folderPickerSelectionIds = [];
 	appState.folderPickerBulkMode = false;
+	appState.versionRenameId = null;
 	elements.folderPickerModal.classList.add('hidden');
 	elements.folderPickerModal.setAttribute('aria-hidden', 'true');
 }
 
 async function submitFolderTargetDialog(event) {
 	event.preventDefault();
-	const selectionIds = appState.folderPickerSelectionIds;
 	const action = appState.folderPickerAction;
-	if (!selectionIds.length || !action) {
+	if (!action) {
 		return;
 	}
-	const isBulkMode = appState.folderPickerBulkMode;
-
 	const targetDirectory = elements.folderPickerTarget.value;
-	const documents = selectionIds
-		.map((fileId) => getDocumentById(fileId))
-		.filter(Boolean);
-	if (!documents.length) {
+	const targetName = elements.folderPickerName.value.trim();
+	if (!targetName) {
+		setStatus('Please enter a name.', true);
 		return;
 	}
 
-	if (isBulkMode) {
-		if (action === 'move') {
-			await moveDocuments(documents, targetDirectory);
-		} else {
-			await copyDocuments(documents, targetDirectory);
-		}
-	} else {
-		const fileId = selectionIds[0];
-		const targetName = elements.folderPickerName.value.trim();
-		if (!targetName) {
-			setStatus('Please enter a name.', true);
+	switch (action) {
+		case 'new-folder': {
+			await requestJson('/api/folders', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					directory: targetDirectory || undefined,
+					folderName: targetName
+				})
+			});
+			await loadPage();
+			closeFolderTargetDialog();
+			setStatus('Folder created.');
 			return;
 		}
-		if (action === 'move') {
-			await moveDocument(fileId, targetName, targetDirectory);
-		} else {
-			await copyDocument(fileId, targetName, targetDirectory);
+		case 'rename': {
+			const fileId = appState.folderPickerSelectionIds[0];
+			if (!fileId) {
+				return;
+			}
+			await renameDocument(fileId, targetName);
+			await loadPage();
+			closeFolderTargetDialog();
+			setStatus('Entry renamed.');
+			return;
+		}
+		case 'version-rename': {
+			const fileId = appState.folderPickerSelectionIds[0];
+			if (!fileId) {
+				return;
+			}
+			await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(appState.versionRenameId || '')}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ label: targetName })
+			});
+			await renderVersionList(fileId);
+			closeFolderTargetDialog();
+			setStatus('Version renamed.');
+			return;
+		}
+		case 'version-name-current': {
+			const fileId = appState.folderPickerSelectionIds[0];
+			if (!fileId) {
+				return;
+			}
+			await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(appState.versionRenameId || '')}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ label: targetName })
+			});
+			await renderVersionList(fileId);
+			closeFolderTargetDialog();
+			setStatus('Current version named.');
+			return;
+		}
+		default: {
+			const selectionIds = appState.folderPickerSelectionIds;
+			const isBulkMode = appState.folderPickerBulkMode;
+			const documents = selectionIds
+				.map((fileId) => getDocumentById(fileId))
+				.filter(Boolean);
+			if (!documents.length) {
+				return;
+			}
+			if (isBulkMode) {
+				if (action === 'move') {
+					await moveDocuments(documents, targetDirectory);
+				} else {
+					await copyDocuments(documents, targetDirectory);
+				}
+			} else {
+				const fileId = selectionIds[0];
+				if (action === 'move') {
+					await moveDocument(fileId, targetName, targetDirectory);
+				} else if (action === 'save-as') {
+					await copyDocument(fileId, targetName, targetDirectory);
+				} else {
+					await copyDocument(fileId, targetName, targetDirectory);
+				}
+			}
+			await loadPage();
+			closeFolderTargetDialog();
+			setStatus(isBulkMode
+				? (action === 'move' ? 'Selected items moved.' : 'Selected items copied.')
+				: (action === 'move' ? 'Entry moved.' : 'Entry copied.'));
+			return;
 		}
 	}
-	await loadPage();
-	closeFolderTargetDialog();
-	setStatus(isBulkMode
-		? (action === 'move' ? 'Selected items moved.' : 'Selected items copied.')
-		: (action === 'move' ? 'Entry moved.' : 'Entry copied.'));
 }
 
 function renderUploadDialog() {
@@ -1469,6 +1584,7 @@ async function submitUploadDialog() {
 		return;
 	}
 
+	let shouldCloseUploadDialog = false;
 	appState.uploadBusy = true;
 	appState.uploadErrors = [];
 	renderUploadDialog();
@@ -1501,7 +1617,7 @@ async function submitUploadDialog() {
 		}
 
 		if (uploadErrors.length === 0 && uploadedFiles.length > 0) {
-			closeUploadDialog();
+			shouldCloseUploadDialog = true;
 			setStatus(`Uploaded ${uploadedFiles.length} file${uploadedFiles.length === 1 ? '' : 's'}.`);
 			return;
 		}
@@ -1527,6 +1643,10 @@ async function submitUploadDialog() {
 		setStatus(error.message, true);
 	} finally {
 		appState.uploadBusy = false;
+		if (shouldCloseUploadDialog) {
+			closeUploadDialog();
+			return;
+		}
 		renderUploadDialog();
 	}
 }
@@ -1620,13 +1740,11 @@ async function deleteSelectedDocuments(documents) {
 
 async function saveAsDocument(fileId) {
 	const document = getDocumentById(fileId);
-	const targetName = window.prompt('Save copy as (with extension):', document?.name ?? '');
-	if (!targetName) {
+	if (!document) {
+		setStatus('The document could not be found.', true);
 		return;
 	}
-	await copyDocument(fileId, targetName);
-	await loadPage();
-	openDetailsPanel(fileId);
+	openFolderTargetDialog('save-as', fileId);
 }
 
 async function deleteDocument(fileId) {
@@ -1650,25 +1768,6 @@ async function setFavoriteState(fileId, favorite) {
 async function toggleFavorite(fileId) {
 	const file = appState.documents.find((entry) => entry.id === fileId);
 	await setFavoriteState(fileId, !file.favorite);
-}
-
-async function showVersions(fileId) {
-	const payload = await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions`);
-	if (!payload.versions.length) {
-		window.alert('No versions yet.');
-		return;
-	}
-
-	const selectedId = window.prompt(
-		`Version history:\n${payload.versions.map((version) => `${version.id} — ${new Date(version.createdAt).toLocaleString()}`).join('\n')}\n\nEnter a Version ID to restore:`
-	);
-	if (!selectedId) {
-		return;
-	}
-
-	await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(selectedId)}/restore`, {
-		method: 'POST'
-	});
 }
 
 async function createShare(fileId) {
@@ -1813,7 +1912,6 @@ async function handleContextMenuAction(action, fileId) {
 			return;
 		case 'rename':
 			await renameDocument(fileId);
-			await loadPage();
 			return;
 		case 'move':
 			await openFolderTargetDialog('move', fileId);
@@ -1862,9 +1960,6 @@ async function handleFileAction(action, fileId, mode) {
 				break;
 			case 'favorite':
 				await toggleFavorite(fileId);
-				break;
-			case 'versions':
-				await showVersions(fileId);
 				break;
 			case 'share':
 				await createShare(fileId);
@@ -1944,10 +2039,6 @@ function toggleNewDocumentMenu(button) {
 	showNewDocumentMenu(button);
 }
 
-async function bulkDeleteSelected() {
-	return deleteSelectedDocuments(getBulkSelectedDocuments());
-}
-
 elements.layoutSplitter.addEventListener('pointerdown', startViewerResize);
 document.addEventListener('pointermove', updateViewerResize);
 document.addEventListener('pointerup', stopViewerResize);
@@ -1976,6 +2067,7 @@ closeViewer();
 });
 elements.folderPickerCancel.addEventListener('click', closeFolderTargetDialog);
 elements.folderPickerForm.addEventListener('submit', submitFolderTargetDialog);
+elements.folderPickerName.addEventListener('focus', prepareFolderPickerNameSelection);
 elements.folderPickerModal.addEventListener('click', function(event) {
 if (event.target === elements.folderPickerModal) {
 	closeFolderTargetDialog();
