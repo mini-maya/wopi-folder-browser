@@ -9,7 +9,7 @@ const { loadInstallState } = require('../lib/installStore');
 const { generatePassword, hashPassword, verifyPassword } = require('../lib/passwords');
 const { destroySession, regenerateSession, requireAuth } = require('../lib/sessionAuth');
 const { assertStorageContextForUser, ensureUserStorageRoot } = require('../lib/storageContext');
-const { getUserByUsername, hasAdminUser, setUserPassword, toPublicUser } = require('../lib/userStore');
+const { assertValidPassword, getUserByUsername, hasAdminUser, setUserPassword, toPublicUser } = require('../lib/userStore');
 
 const router = express.Router();
 
@@ -139,6 +139,7 @@ router.post('/change-password', requireAuth, async function(req, res, next) {
 		if (!validPassword) {
 			throw createHttpError(401, 'Current password is invalid.');
 		}
+		assertValidPassword(newPassword);
 
 		const nextHash = await hashPassword(newPassword);
 		const updated = await setUserPassword(config.documentRoot, req.auth.user.id, nextHash, false);

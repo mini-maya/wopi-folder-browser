@@ -1032,6 +1032,14 @@ function renderAuthControls() {
 	elements.sharedFilesButton.disabled = !authenticated || currentContext === 'shared';
 }
 
+function applyPasswordPolicyToForms(minLength) {
+	const effectiveMinLength = Number.isInteger(minLength) && minLength > 0 ? minLength : 12;
+	elements.accountNewPassword.minLength = effectiveMinLength;
+	elements.adminCreatePassword.minLength = effectiveMinLength;
+	elements.accountNewPassword.placeholder = `At least ${effectiveMinLength} characters`;
+	elements.adminCreatePassword.placeholder = `At least ${effectiveMinLength} characters`;
+}
+
 async function refreshAuthState() {
 	appState.auth = await requestJson('/api/auth/me');
 	renderAuthControls();
@@ -1325,6 +1333,7 @@ async function loadPage() {
 		appState.config = config;
 		appState.documents = fileList.documents;
 		appState.auth.storageContext = config.storageContext || appState.auth.storageContext || 'shared';
+		applyPasswordPolicyToForms(config.passwordMinLength);
 		renderAuthControls();
 		elements.documentRoot.textContent = config.documentRoot;
 		elements.appBaseUrl.textContent = config.appBaseUrl;

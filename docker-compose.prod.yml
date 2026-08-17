@@ -11,6 +11,7 @@ services:
       COLLABORA_PUBLIC_URL: https://collabora.lan
       ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:?set ACCESS_TOKEN_SECRET}
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
+      PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-12}
       MAX_DOCUMENT_SIZE: 100mb
       NODE_EXTRA_CA_CERTS: /run/certs/collabora-ca.crt
     expose:

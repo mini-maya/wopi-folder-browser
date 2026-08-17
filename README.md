@@ -88,6 +88,7 @@ The Compose file already wires the important variables:
 | `COLLABORA_PUBLIC_URL` | Browser-visible Collabora URL used inside the iframe | `http://localhost:9980` |
 | `ACCESS_TOKEN_SECRET` | Secret used to sign WOPI access tokens | `change-me-for-real-usage` |
 | `SESSION_SECRET` | Secret used to sign browser session cookies | `change-me-session-secret` |
+| `PASSWORD_MIN_LENGTH` | Minimum password length for setup/admin/user password flows | `12` |
 
 `WOPI_STATE_ROOT` is the key setting that moves the hidden `.wopi-state` directory out of the documents tree. In Docker Compose it is usually mounted separately, for example:
 
@@ -132,6 +133,7 @@ COLLABORA_INTERNAL_URL=http://localhost:9980
 COLLABORA_PUBLIC_URL=http://localhost:9980
 ACCESS_TOKEN_SECRET=change-me
 SESSION_SECRET=change-me-session
+PASSWORD_MIN_LENGTH=12
 ```
 
 ## Production setup: `office.lan` + `collabora.lan`

@@ -109,6 +109,14 @@ test('setup, authentication, authorization and storage isolation flow', async fu
 		requestResult = await adminClient.request('/api/admin/users', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'too-short', role: 'user', password: 'shortpwd', generatePassword: false })
+		});
+		assert.equal(requestResult.response.status, 400);
+		assert.match(String(requestResult.payload.error || ''), /at least 12 characters/);
+
+		requestResult = await adminClient.request('/api/admin/users', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ username: 'bob', role: 'user', password: 'BobPassword12345', generatePassword: false })
 		});
 		assert.equal(requestResult.response.status, 201);

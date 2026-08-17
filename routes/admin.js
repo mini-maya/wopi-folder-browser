@@ -12,6 +12,7 @@ const {
 	deleteUser,
 	getUserById,
 	listUsers,
+	assertValidPassword,
 	setUserActive,
 	setUserPassword,
 	setUserRole,
@@ -117,6 +118,7 @@ router.post('/users/:userId/reset-password', async function(req, res, next) {
 		if (!plainPassword) {
 			throw createHttpError(400, 'Password is required when generation is disabled.');
 		}
+		assertValidPassword(plainPassword);
 		const passwordHash = await hashPassword(plainPassword);
 		await setUserPassword(config.documentRoot, targetUserId, passwordHash, true);
 		res.json({

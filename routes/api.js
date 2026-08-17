@@ -147,6 +147,7 @@ router.get('/config', function(req, res) {
 		appBaseUrl: config.getPublicAppBaseUrl(req),
 		collaboraPublicUrl: config.collaboraPublicUrl,
 		storageContext: req.storageContext?.context || STORAGE_CONTEXT_SHARED,
+		passwordMinLength: config.passwordMinLength,
 		defaultEditorMode: config.defaultEditorMode,
 		features: {
 			allowDocumentCreation: config.allowDocumentCreation,
