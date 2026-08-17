@@ -1043,19 +1043,19 @@ async function showConflictDialog(conflict, operationLabel) {
 					<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0;">
 						<div class="details-card" style="padding: 12px; border: 1px solid var(--border-color, rgba(255,255,255,0.12)); border-radius: 12px;">
 							<strong>Source</strong>
-							<div>${escapeHtml(conflict?.source?.name || 'Unknown')}</div>
-							${sourceParentPath ? `<div>${escapeHtml(sourceParentPath)}</div>` : ''}
-							<div>${escapeHtml(conflict?.source?.type === 'directory' ? 'Folder' : 'File')}</div>
-							<div>${conflict?.source?.size != null ? escapeHtml(formatBytes(conflict.source.size)) : '—'}</div>
-							<div>${conflict?.source?.modifiedAt ? escapeHtml(formatDate(conflict.source.modifiedAt)) : '—'}</div>
+							<div>Name: <strong>${escapeHtml(conflict?.source?.name || 'Unknown')}</strong></div>
+							${sourceParentPath ? `<div>Path: <strong>${escapeHtml(sourceParentPath)}</strong></div>` : ''}
+							<div>Type: <strong>${escapeHtml(conflict?.source?.type === 'directory' ? 'Folder' : 'File')}</strong></div>
+							<div>Size: <strong>${conflict?.source?.size != null ? escapeHtml(formatBytes(conflict.source.size)) : '—'}</strong></div>
+							<div>Modified at: <strong>${conflict?.source?.modifiedAt ? escapeHtml(formatDate(conflict.source.modifiedAt)) : '—'}</strong></div>
 						</div>
 						<div class="details-card" style="padding: 12px; border: 1px solid var(--border-color, rgba(255,255,255,0.12)); border-radius: 12px;">
 							<strong>Existing target</strong>
-							<div>${escapeHtml(conflict?.target?.name || 'Unknown')}</div>
-							${targetParentPath ? `<div>${escapeHtml(targetParentPath)}</div>` : ''}
-							<div>${escapeHtml(conflict?.target?.type === 'directory' ? 'Folder' : 'File')}</div>
-							<div>${conflict?.target?.size != null ? escapeHtml(formatBytes(conflict.target.size)) : '—'}</div>
-							<div>${conflict?.target?.modifiedAt ? escapeHtml(formatDate(conflict.target.modifiedAt)) : '—'}</div>
+							<div>Name: <strong>${escapeHtml(conflict?.target?.name || 'Unknown')}</strong></div>
+							${targetParentPath ? `<div>Path: <strong>${escapeHtml(targetParentPath)}</strong></div>` : ''}
+							<div>Type: <strong>${escapeHtml(conflict?.target?.type === 'directory' ? 'Folder' : 'File')}</strong></div>
+							<div>Size: <strong>${conflict?.target?.size != null ? escapeHtml(formatBytes(conflict.target.size)) : '—'}</strong></div>
+							<div>Modified at: <strong>${conflict?.target?.modifiedAt ? escapeHtml(formatDate(conflict.target.modifiedAt)) : '—'}</strong></div>
 						</div>
 					</div>
 					<label class="checkbox-field" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
@@ -2355,9 +2355,9 @@ async function showContextMenu(fileId, button) {
 		<div class="context-menu-submenu hidden" data-submenu="new-document" aria-label="New document submenu">
 			<button type="button" data-context-action="new-folder" data-file-id="${documentEntry.id}">New folder</button>
 			<div class="context-menu-separator"></div>
-			<button type="button" data-context-action="new-text" data-file-id="${documentEntry.id}">New text document</button>
-			<button type="button" data-context-action="new-spreadsheet" data-file-id="${documentEntry.id}">New spreadsheet</button>
-			<button type="button" data-context-action="new-presentation" data-file-id="${documentEntry.id}">New presentation</button>
+			<button type="button" data-context-action="new-openoffice-text" data-file-id="${documentEntry.id}">New OpenOffice text document</button>
+			<button type="button" data-context-action="new-openoffice-spreadsheet" data-file-id="${documentEntry.id}">New OpenOffice spreadsheet</button>
+			<button type="button" data-context-action="new-openoffice-presentation" data-file-id="${documentEntry.id}">New OpenOffice presentation</button>
 			<div class="context-menu-separator"></div>
 			<button type="button" data-context-action="new-microsoft-text" data-file-id="${documentEntry.id}">New Microsoft Word document</button>
 			<button type="button" data-context-action="new-microsoft-spreadsheet" data-file-id="${documentEntry.id}">New Microsoft Excel spreadsheet</button>
@@ -2443,13 +2443,13 @@ async function handleContextMenuAction(action, fileId) {
 			return;
 		case 'new-document':
 			return;
-		case 'new-text':
+		case 'new-openoffice-text':
 			await createDocumentInDirectory('text', documentEntry?.relativePath || '');
 			return;
-		case 'new-spreadsheet':
+		case 'new-openoffice-spreadsheet':
 			await createDocumentInDirectory('spreadsheet', documentEntry?.relativePath || '');
 			return;
-		case 'new-presentation':
+		case 'new-openoffice-presentation':
 			await createDocumentInDirectory('presentation', documentEntry?.relativePath || '');
 			return;
 		case 'new-microsoft-text':
@@ -2557,9 +2557,9 @@ function showNewDocumentMenu(button) {
 	menu.innerHTML = `
 		<button type="button" data-context-action="new-folder">New folder</button>
 		<div class="context-menu-separator"></div>
-		<button type="button" data-context-action="new-text">New text document</button>
-		<button type="button" data-context-action="new-spreadsheet">New spreadsheet</button>
-		<button type="button" data-context-action="new-presentation">New presentation</button>
+		<button type="button" data-context-action="new-openoffice-text">New OpenOffice text document</button>
+		<button type="button" data-context-action="new-openoffice-spreadsheet">New OpenOffice spreadsheet</button>
+		<button type="button" data-context-action="new-openoffice-presentation">New OpenOffice presentation</button>
 		<div class="context-menu-separator"></div>
 		<button type="button" data-context-action="new-microsoft-text">New Microsoft Word document</button>
 		<button type="button" data-context-action="new-microsoft-spreadsheet">New Microsoft Excel spreadsheet</button>
