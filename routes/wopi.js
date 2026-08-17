@@ -11,6 +11,7 @@ const { createHttpError } = require('../lib/errors');
 const { clearLock, ensureLockMatches, getLock, setLock } = require('../lib/lockStore');
 const { invalidatePreview } = require('../lib/previewStore');
 const { getShare } = require('../lib/shareStore');
+const { getStorageRootFromTokenClaims } = require('../lib/storageContext');
 const { createVersionSnapshot, getVersionEntry } = require('../lib/versionStore');
 
 const router = express.Router();
@@ -29,7 +30,7 @@ async function loadAuthorizedDocument(req) {
 	});
 
 	if (payload.shareId) {
-		const share = await getShare(config.documentRoot, payload.shareId);
+		const share = await getShare(getStorageRootFromTokenClaims(config, payload), payload.shareId);
 		if (share.fileId !== fileId) {
 			throw createHttpError(403, 'The share does not grant access to this file.');
 		}
@@ -38,9 +39,11 @@ async function loadAuthorizedDocument(req) {
 		}
 	}
 
+	const documentRoot = getStorageRootFromTokenClaims(config, payload);
 	return {
-		document: await getDocumentById(config.documentRoot, fileId),
-		tokenPayload: payload
+		document: await getDocumentById(documentRoot, fileId),
+		tokenPayload: payload,
+		documentRoot: documentRoot
 	};
 }
 
@@ -57,7 +60,7 @@ router.get('/files/:fileId', async function(req, res, next) {
 		const authorized = await loadAuthorizedDocument(req);
 
 		if (authorized.tokenPayload.versionId) {
-			const { entry } = await getVersionEntry(config.documentRoot, req.params.fileId, authorized.tokenPayload.versionId);
+			const { entry } = await getVersionEntry(authorized.documentRoot, req.params.fileId, authorized.tokenPayload.versionId);
 			res.json({
 				BaseFileName: authorized.document.name,
 				OwnerId: 'shared-folder',
@@ -101,7 +104,7 @@ router.get('/files/:fileId/contents', async function(req, res, next) {
 		const authorized = await loadAuthorizedDocument(req);
 
 		if (authorized.tokenPayload.versionId) {
-			const { entry, storagePath } = await getVersionEntry(config.documentRoot, req.params.fileId, authorized.tokenPayload.versionId);
+			const { entry, storagePath } = await getVersionEntry(authorized.documentRoot, req.params.fileId, authorized.tokenPayload.versionId);
 			res.type(authorized.document.mimeType);
 			res.set('X-WOPI-ItemVersion', entry.id);
 			res.sendFile(storagePath);
@@ -176,7 +179,7 @@ router.post('/files/:fileId', async function(req, res, next) {
 
 			const currentExtension = authorized.document.extension;
 			const normalizedRequestedName = `${requestedName}${currentExtension}`;
-			const updatedDocument = await renameOrMoveDocument(config.documentRoot, req.params.fileId, {
+			const updatedDocument = await renameOrMoveDocument(authorized.documentRoot, req.params.fileId, {
 				targetName: normalizedRequestedName
 			});
 			res.json({
@@ -209,14 +212,14 @@ router.post('/files/:fileId/contents', async function(req, res, next) {
 			return;
 		}
 
-		await createVersionSnapshot(config.documentRoot, authorized.document, {
+		await createVersionSnapshot(authorized.documentRoot, authorized.document, {
 			id: authorized.tokenPayload.userId || 'shared-user',
 			name: authorized.tokenPayload.userName || 'Shared Folder User'
 		});
 		await fs.writeFile(authorized.document.absolutePath, req.body);
-		const updatedDocument = await getDocumentById(config.documentRoot, req.params.fileId);
-		await invalidatePreview(config.documentRoot, updatedDocument);
-		await recordEditActivity(config.documentRoot, {
+		const updatedDocument = await getDocumentById(authorized.documentRoot, req.params.fileId);
+		await invalidatePreview(authorized.documentRoot, updatedDocument);
+		await recordEditActivity(authorized.documentRoot, {
 			fileId: updatedDocument.id,
 			fileName: updatedDocument.name,
 			userId: authorized.tokenPayload.userId || 'shared-user',

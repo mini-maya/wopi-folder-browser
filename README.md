@@ -18,6 +18,7 @@ This project is a small WOPI host for Collabora Online CODE. It lists Office fil
 - supports creating new text/spreadsheet/presentation files and optional template-based creation
 - supports rename/move/copy/delete, favorites, recent files, and version history restore
 - supports file uploads into the root folder or a selected folder, including drag-and-drop of files and folders
+- supports authentication with session cookies, personal user storage, and admin user management
 - exposes feature matrix, diagnostics, and supported-format endpoints
 - runs together with a Collabora CODE container via Docker Compose
 
@@ -71,6 +72,7 @@ The Compose file already wires the important variables:
 | `COLLABORA_INTERNAL_URL` | URL used by the app container to fetch discovery | `http://collabora:9980` |
 | `COLLABORA_PUBLIC_URL` | Browser-visible Collabora URL used inside the iframe | `http://localhost:9980` |
 | `ACCESS_TOKEN_SECRET` | Secret used to sign WOPI access tokens | `change-me-for-real-usage` |
+| `SESSION_SECRET` | Secret used to sign browser session cookies | `change-me-session-secret` |
 
 `WOPI_STATE_ROOT` is the key setting that moves the hidden `.wopi-state` directory out of the documents tree. In Docker Compose it is usually mounted separately, for example:
 
@@ -114,6 +116,7 @@ APP_BASE_URL=http://localhost:3000
 COLLABORA_INTERNAL_URL=http://localhost:9980
 COLLABORA_PUBLIC_URL=http://localhost:9980
 ACCESS_TOKEN_SECRET=change-me
+SESSION_SECRET=change-me-session
 ```
 
 ## Production setup: `office.lan` + `collabora.lan`
@@ -231,5 +234,5 @@ If one of these points is wrong, the common symptoms are:
 
 ## Notes
 
-- This is a shared-folder app without authentication or per-user permissions.
+- The app keeps a public shared area and additionally supports authenticated personal user storage.
 - In production, run both services behind HTTPS and replace the development token secret.

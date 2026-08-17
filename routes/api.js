@@ -22,6 +22,7 @@ const {
 const { createHttpError } = require('../lib/errors');
 const { createDocumentsZip, createFolderZip } = require('../lib/folderZip');
 const { createShare, getShare } = require('../lib/shareStore');
+const { getSharedStorageRoot, STORAGE_CONTEXT_SHARED } = require('../lib/storageContext');
 const { createDocumentFromTemplate, listTemplates } = require('../lib/templateStore');
 const { getRequestUser } = require('../lib/userContext');
 const { addRecent, loadUserState, setFavorite } = require('../lib/userStateStore');
@@ -30,6 +31,14 @@ const { invalidatePreview } = require('../lib/previewStore');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+function getDocumentRoot(req) {
+	return req.storageContext?.documentRoot || config.documentRoot;
+}
+
+function getSharedDocumentRoot() {
+	return getSharedStorageRoot(config);
+}
 
 const FEATURE_MATRIX = [
 	{ feature: 'Office Editor (Writer/Calc/Impress)', category: 1, note: 'Handled by Collabora via discovery action URL.' },
@@ -107,12 +116,13 @@ async function buildLaunchPayload(req, document, mode, shareId, versionId) {
 			canWrite: writePermission,
 			canRename: writePermission,
 			shareId: shareId || null,
-			versionId: versionId || null
+			versionId: versionId || null,
+			storageContext: shareId ? STORAGE_CONTEXT_SHARED : (req.storageContext?.context || STORAGE_CONTEXT_SHARED)
 		}
 	});
 
-	await addRecent(config.documentRoot, user.id, document.id);
-	await appendActivity(config.documentRoot, {
+	await addRecent(getDocumentRoot(req), user.id, document.id);
+	await appendActivity(getDocumentRoot(req), {
 		type: 'open',
 		fileId: document.id,
 		fileName: document.name,
@@ -132,10 +142,11 @@ async function buildLaunchPayload(req, document, mode, shareId, versionId) {
 
 router.get('/config', function(req, res) {
 	res.json({
-		documentRoot: config.documentRoot,
+		documentRoot: getDocumentRoot(req),
 		templateRoot: config.templateRoot,
 		appBaseUrl: config.getPublicAppBaseUrl(req),
 		collaboraPublicUrl: config.collaboraPublicUrl,
+		storageContext: req.storageContext?.context || STORAGE_CONTEXT_SHARED,
 		defaultEditorMode: config.defaultEditorMode,
 		features: {
 			allowDocumentCreation: config.allowDocumentCreation,
@@ -168,8 +179,8 @@ router.get('/feature-matrix', function(req, res) {
 router.get('/files', async function(req, res, next) {
 	try {
 		const user = getRequestUser(req);
-		const documents = await listDocuments(config.documentRoot);
-		const userState = await loadUserState(config.documentRoot, user.id);
+		const documents = await listDocuments(getDocumentRoot(req));
+		const userState = await loadUserState(getDocumentRoot(req), user.id);
 		res.json({ documents: mapDocumentListWithUserState(documents, userState) });
 	} catch (error) {
 		next(error);
@@ -178,7 +189,7 @@ router.get('/files', async function(req, res, next) {
 
 router.get('/files/:fileId', async function(req, res, next) {
 	try {
-		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		const document = await getDocumentById(getDocumentRoot(req), req.params.fileId);
 		res.json({ file: document });
 	} catch (error) {
 		next(error);
@@ -187,13 +198,13 @@ router.get('/files/:fileId', async function(req, res, next) {
 
 router.get('/files/:fileId/download', async function(req, res, next) {
 	try {
-		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		const document = await getDocumentById(getDocumentRoot(req), req.params.fileId);
 
 		if (req.query.versionId) {
 			if (document.isDirectory) {
 				throw createHttpError(400, 'Folders do not have versions.');
 			}
-			const { storagePath } = await getVersionEntry(config.documentRoot, req.params.fileId, req.query.versionId);
+			const { storagePath } = await getVersionEntry(getDocumentRoot(req), req.params.fileId, req.query.versionId);
 			res.type(document.mimeType);
 			res.download(storagePath, document.name);
 			return;
@@ -224,7 +235,7 @@ router.post('/files/bulk-download', async function(req, res, next) {
 
 		const documents = [];
 		for (const fileId of fileIds) {
-			const document = await getDocumentById(config.documentRoot, fileId);
+			const document = await getDocumentById(getDocumentRoot(req), fileId);
 			documents.push(document);
 		}
 
@@ -242,7 +253,7 @@ router.post('/files/bulk-download', async function(req, res, next) {
 router.get('/files/:fileId/launch', async function(req, res, next) {
 	try {
 		const requestedMode = normalizeEditorMode(req.query.mode || config.defaultEditorMode);
-		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		const document = await getDocumentById(getDocumentRoot(req), req.params.fileId);
 		if (document.isDirectory) {
 			throw createHttpError(404, 'Folders cannot be opened.');
 		}
@@ -266,7 +277,7 @@ router.post('/files', async function(req, res, next) {
 				throw createHttpError(403, 'Templates are disabled.');
 			}
 
-			document = await createDocumentFromTemplate(config, config.documentRoot, user, {
+			document = await createDocumentFromTemplate(config, getDocumentRoot(req), user, {
 				templateId: req.body.templateId,
 				directory: req.body.directory,
 				fileName: req.body.fileName
@@ -277,21 +288,21 @@ router.post('/files', async function(req, res, next) {
 				throw createHttpError(400, 'Unsupported document type.');
 			}
 
-			document = await createDocumentByType(config.documentRoot, {
+			document = await createDocumentByType(getDocumentRoot(req), {
 				documentType: req.body.type || 'text',
 				directory: req.body.directory,
 				baseName: baseName
 			});
 		}
 
-		await appendActivity(config.documentRoot, {
+		await appendActivity(getDocumentRoot(req), {
 			type: 'create',
 			fileId: document.id,
 			fileName: document.name,
 			userId: user.id,
 			userName: user.displayName
 		});
-		await invalidatePreview(config.documentRoot, document);
+		await invalidatePreview(getDocumentRoot(req), document);
 		const launchPayload = await buildLaunchPayload(req, document, normalizeEditorMode(req.body.mode || 'edit'));
 		res.status(201).json(launchPayload);
 	} catch (error) {
@@ -306,11 +317,11 @@ router.post('/folders', async function(req, res, next) {
 		}
 
 		const user = getRequestUser(req);
-		const folder = await createFolder(config.documentRoot, {
+		const folder = await createFolder(getDocumentRoot(req), {
 			directory: req.body.directory,
 			folderName: req.body.folderName
 		});
-		await appendActivity(config.documentRoot, {
+		await appendActivity(getDocumentRoot(req), {
 			type: 'create-folder',
 			fileId: folder.id,
 			fileName: folder.name,
@@ -347,21 +358,21 @@ router.post('/uploads', upload.array('files'), async function(req, res, next) {
 			relativePath: relativePaths[index] || file.originalname,
 			content: file.buffer
 		}));
-		const result = await uploadDocuments(config.documentRoot, {
+		const result = await uploadDocuments(getDocumentRoot(req), {
 			directory: req.body.directory,
 			files: uploadEntries
 		});
 		const user = getRequestUser(req);
 
 		for (const document of result.uploadedDocuments) {
-			await appendActivity(config.documentRoot, {
+			await appendActivity(getDocumentRoot(req), {
 				type: 'upload',
 				fileId: document.id,
 				fileName: document.name,
 				userId: user.id,
 				userName: user.displayName
 			});
-			await invalidatePreview(config.documentRoot, document);
+			await invalidatePreview(getDocumentRoot(req), document);
 		}
 
 		res.status(result.errors.length === 0 ? 201 : 200).json({
@@ -376,18 +387,18 @@ router.post('/uploads', upload.array('files'), async function(req, res, next) {
 router.post('/files/:fileId/move', async function(req, res, next) {
 	try {
 		const user = getRequestUser(req);
-		const document = await renameOrMoveDocument(config.documentRoot, req.params.fileId, {
+		const document = await renameOrMoveDocument(getDocumentRoot(req), req.params.fileId, {
 			targetDirectory: req.body.targetDirectory,
 			targetName: req.body.targetName
 		});
-		await appendActivity(config.documentRoot, {
+		await appendActivity(getDocumentRoot(req), {
 			type: 'move',
 			fileId: document.id,
 			fileName: document.name,
 			userId: user.id,
 			userName: user.displayName
 		});
-		await invalidatePreview(config.documentRoot, document);
+		await invalidatePreview(getDocumentRoot(req), document);
 		res.json({ file: document });
 	} catch (error) {
 		next(error);
@@ -397,18 +408,18 @@ router.post('/files/:fileId/move', async function(req, res, next) {
 router.post('/files/:fileId/copy', async function(req, res, next) {
 	try {
 		const user = getRequestUser(req);
-		const copiedDocument = await copyDocument(config.documentRoot, req.params.fileId, {
+		const copiedDocument = await copyDocument(getDocumentRoot(req), req.params.fileId, {
 			targetDirectory: req.body.targetDirectory,
 			targetName: req.body.targetName
 		});
-		await appendActivity(config.documentRoot, {
+		await appendActivity(getDocumentRoot(req), {
 			type: 'copy',
 			fileId: copiedDocument.id,
 			fileName: copiedDocument.name,
 			userId: user.id,
 			userName: user.displayName
 		});
-		await invalidatePreview(config.documentRoot, copiedDocument);
+		await invalidatePreview(getDocumentRoot(req), copiedDocument);
 		res.status(201).json({ file: copiedDocument });
 	} catch (error) {
 		next(error);
@@ -418,8 +429,8 @@ router.post('/files/:fileId/copy', async function(req, res, next) {
 router.delete('/files/:fileId', async function(req, res, next) {
 	try {
 		const user = getRequestUser(req);
-		const deletedDocument = await deleteDocument(config.documentRoot, req.params.fileId);
-		await appendActivity(config.documentRoot, {
+		const deletedDocument = await deleteDocument(getDocumentRoot(req), req.params.fileId);
+		await appendActivity(getDocumentRoot(req), {
 			type: 'delete',
 			fileId: deletedDocument.id,
 			fileName: deletedDocument.name,
@@ -434,11 +445,11 @@ router.delete('/files/:fileId', async function(req, res, next) {
 
 router.get('/files/:fileId/versions', async function(req, res, next) {
 	try {
-		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		const document = await getDocumentById(getDocumentRoot(req), req.params.fileId);
 		if (document.isDirectory) {
 			throw createHttpError(404, 'Folders do not have version history.');
 		}
-		const versions = await listVersions(config.documentRoot, document);
+		const versions = await listVersions(getDocumentRoot(req), document);
 		res.json({ versions: versions });
 	} catch (error) {
 		next(error);
@@ -448,17 +459,17 @@ router.get('/files/:fileId/versions', async function(req, res, next) {
 router.post('/files/:fileId/versions/:versionId/restore', async function(req, res, next) {
 	try {
 		const user = getRequestUser(req);
-		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		const document = await getDocumentById(getDocumentRoot(req), req.params.fileId);
 		if (document.isDirectory) {
 			throw createHttpError(404, 'Folders do not have version history.');
 		}
-		await restoreVersion(config.documentRoot, document, req.params.versionId, {
+		await restoreVersion(getDocumentRoot(req), document, req.params.versionId, {
 			id: user.id,
 			name: user.displayName
 		});
-		const updatedDocument = await getDocumentById(config.documentRoot, req.params.fileId);
-		await invalidatePreview(config.documentRoot, updatedDocument);
-		await appendActivity(config.documentRoot, {
+		const updatedDocument = await getDocumentById(getDocumentRoot(req), req.params.fileId);
+		await invalidatePreview(getDocumentRoot(req), updatedDocument);
+		await appendActivity(getDocumentRoot(req), {
 			type: 'restore-version',
 			fileId: updatedDocument.id,
 			fileName: updatedDocument.name,
@@ -474,11 +485,11 @@ router.post('/files/:fileId/versions/:versionId/restore', async function(req, re
 
 router.get('/files/:fileId/versions/:versionId/view', async function(req, res, next) {
 	try {
-		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		const document = await getDocumentById(getDocumentRoot(req), req.params.fileId);
 		if (document.isDirectory) {
 			throw createHttpError(404, 'Folders do not have version history.');
 		}
-		await getVersionEntry(config.documentRoot, req.params.fileId, req.params.versionId);
+		await getVersionEntry(getDocumentRoot(req), req.params.fileId, req.params.versionId);
 		const launchPayload = await buildLaunchPayload(req, document, 'view', null, req.params.versionId);
 		res.json(launchPayload);
 	} catch (error) {
@@ -488,13 +499,13 @@ router.get('/files/:fileId/versions/:versionId/view', async function(req, res, n
 
 router.patch('/files/:fileId/versions/:versionId', async function(req, res, next) {
 	try {
-		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		const document = await getDocumentById(getDocumentRoot(req), req.params.fileId);
 		if (document.isDirectory) {
 			throw createHttpError(404, 'Folders do not have version history.');
 		}
 		const label = req.body.label != null ? String(req.body.label).trim() : null;
-		await renameVersion(config.documentRoot, req.params.fileId, req.params.versionId, label || null);
-		const versions = await listVersions(config.documentRoot, document);
+		await renameVersion(getDocumentRoot(req), req.params.fileId, req.params.versionId, label || null);
+		const versions = await listVersions(getDocumentRoot(req), document);
 		res.json({ versions: versions });
 	} catch (error) {
 		next(error);
@@ -504,12 +515,12 @@ router.patch('/files/:fileId/versions/:versionId', async function(req, res, next
 router.delete('/files/:fileId/versions/:versionId', async function(req, res, next) {
 	try {
 		const user = getRequestUser(req);
-		const document = await getDocumentById(config.documentRoot, req.params.fileId);
+		const document = await getDocumentById(getDocumentRoot(req), req.params.fileId);
 		if (document.isDirectory) {
 			throw createHttpError(404, 'Folders do not have version history.');
 		}
-		await deleteVersion(config.documentRoot, document, req.params.versionId);
-		await appendActivity(config.documentRoot, {
+		await deleteVersion(getDocumentRoot(req), document, req.params.versionId);
+		await appendActivity(getDocumentRoot(req), {
 			type: 'delete-version',
 			fileId: document.id,
 			fileName: document.name,
@@ -527,7 +538,7 @@ router.post('/files/:fileId/favorite', async function(req, res, next) {
 	try {
 		const user = getRequestUser(req);
 		const favorite = req.body.favorite !== false;
-		const favorites = await setFavorite(config.documentRoot, user.id, req.params.fileId, favorite);
+		const favorites = await setFavorite(getDocumentRoot(req), user.id, req.params.fileId, favorite);
 		res.json({ favorites: favorites });
 	} catch (error) {
 		next(error);
@@ -537,11 +548,11 @@ router.post('/files/:fileId/favorite', async function(req, res, next) {
 router.get('/favorites', async function(req, res, next) {
 	try {
 		const user = getRequestUser(req);
-		const userState = await loadUserState(config.documentRoot, user.id);
+		const userState = await loadUserState(getDocumentRoot(req), user.id);
 		const files = await Promise.all(
 			userState.favorites.map(async (fileId) => {
 				try {
-					return await getDocumentById(config.documentRoot, fileId);
+					return await getDocumentById(getDocumentRoot(req), fileId);
 				} catch (error) {
 					return null;
 				}
@@ -556,11 +567,11 @@ router.get('/favorites', async function(req, res, next) {
 router.get('/recent', async function(req, res, next) {
 	try {
 		const user = getRequestUser(req);
-		const userState = await loadUserState(config.documentRoot, user.id);
+		const userState = await loadUserState(getDocumentRoot(req), user.id);
 		const files = await Promise.all(
 			userState.recent.map(async (entry) => {
 				try {
-					const file = await getDocumentById(config.documentRoot, entry.fileId);
+					const file = await getDocumentById(getDocumentRoot(req), entry.fileId);
 					return {
 						file: file,
 						openedAt: entry.openedAt
@@ -579,7 +590,7 @@ router.get('/recent', async function(req, res, next) {
 router.get('/activities', async function(req, res, next) {
 	try {
 		const limit = Number.parseInt(req.query.limit, 10) || 50;
-		const activity = await listActivity(config.documentRoot, limit);
+		const activity = await listActivity(getDocumentRoot(req), limit);
 		res.json({ activities: activity });
 	} catch (error) {
 		next(error);
@@ -598,12 +609,12 @@ router.get('/templates', async function(req, res, next) {
 
 router.post('/shares', async function(req, res, next) {
 	try {
-		const document = await getDocumentById(config.documentRoot, req.body.fileId);
+		const document = await getDocumentById(getSharedDocumentRoot(), req.body.fileId);
 		if (document.isDirectory) {
 			throw createHttpError(400, 'Folders cannot be shared.');
 		}
 
-		const share = await createShare(config.documentRoot, {
+		const share = await createShare(getSharedDocumentRoot(), {
 			fileId: req.body.fileId,
 			permission: req.body.permission
 		});
@@ -618,12 +629,12 @@ router.post('/shares', async function(req, res, next) {
 
 router.get('/shares/:shareId/launch', async function(req, res, next) {
 	try {
-		const share = await getShare(config.documentRoot, req.params.shareId);
+		const share = await getShare(getSharedDocumentRoot(), req.params.shareId);
 		if (share.permission === 'edit' && !config.allowPublicEditing) {
 			throw createHttpError(403, 'Public edit links are disabled.');
 		}
 
-		const document = await getDocumentById(config.documentRoot, share.fileId);
+		const document = await getDocumentById(getSharedDocumentRoot(), share.fileId);
 		const launchPayload = await buildLaunchPayload(req, document, share.permission, share.id);
 		res.json(launchPayload);
 	} catch (error) {
@@ -639,7 +650,7 @@ router.get('/search', async function(req, res, next) {
 			return;
 		}
 
-		const documents = await listDocuments(config.documentRoot);
+		const documents = await listDocuments(getDocumentRoot(req));
 		const files = documents.filter((document) => (
 			document.name.toLowerCase().includes(query) ||
 			document.relativePath.toLowerCase().includes(query) ||
@@ -692,7 +703,7 @@ router.get('/admin/diagnostics', async function(req, res, next) {
 		}
 
 		try {
-			await fs.access(config.documentRoot);
+			await fs.access(getDocumentRoot(req));
 			diagnostics.wopi = { ok: true };
 		} catch (error) {
 			diagnostics.wopi = { ok: false, error: error.message };

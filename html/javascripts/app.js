@@ -22,6 +22,12 @@ const elements = {
 	refreshButton: document.querySelector('#refresh-button'),
 	newMenuButton: document.querySelector('#new-menu-button'),
 	uploadButton: document.querySelector('#upload-button'),
+	myFilesButton: document.querySelector('#my-files-button'),
+	sharedFilesButton: document.querySelector('#shared-files-button'),
+	adminButton: document.querySelector('#admin-button'),
+	accountButton: document.querySelector('#account-button'),
+	loginButton: document.querySelector('#login-button'),
+	logoutButton: document.querySelector('#logout-button'),
 	themeSelect: document.querySelector('#theme-select'),
 	searchInput: document.querySelector('#search-input'),
 	collaboraForm: document.querySelector('#collabora-submit-form'),
@@ -68,7 +74,12 @@ const appState = {
 	uploadDragActive: false,
 	viewerOpen: false,
 	viewerPanelWidth: 800,
-	isResizingViewer: false
+	isResizingViewer: false,
+	auth: {
+		authenticated: false,
+		user: null,
+		storageContext: 'shared'
+	}
 };
 
 const DEFAULT_VIEWER_TITLE = 'No document opened yet';
@@ -986,6 +997,171 @@ async function requestJson(url, options = {}) {
 	return payload;
 }
 
+function renderAuthControls() {
+	const authenticated = Boolean(appState.auth?.authenticated);
+	const role = appState.auth?.user?.role || 'user';
+	const currentContext = appState.auth?.storageContext || 'shared';
+
+	elements.loginButton.classList.toggle('hidden', authenticated);
+	elements.logoutButton.classList.toggle('hidden', !authenticated);
+	elements.accountButton.classList.toggle('hidden', !authenticated);
+	elements.adminButton.classList.toggle('hidden', !(authenticated && role === 'admin'));
+	elements.myFilesButton.classList.toggle('hidden', !authenticated);
+	elements.sharedFilesButton.classList.toggle('hidden', !authenticated);
+	elements.myFilesButton.disabled = !authenticated || currentContext === 'personal';
+	elements.sharedFilesButton.disabled = !authenticated || currentContext === 'shared';
+}
+
+async function refreshAuthState() {
+	appState.auth = await requestJson('/api/auth/me');
+	renderAuthControls();
+}
+
+async function loginWithPrompt() {
+	const username = window.prompt('Username');
+	if (!username) {
+		return;
+	}
+	const password = window.prompt('Password');
+	if (!password) {
+		return;
+	}
+	await requestJson('/api/auth/login', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ username: username, password: password })
+	});
+	await loadPage();
+	if (appState.auth?.user?.must_change_password) {
+		setStatus('Please change your password now.', true);
+	}
+}
+
+async function logoutCurrentUser() {
+	await requestJson('/api/auth/logout', { method: 'POST' });
+	await closeViewer();
+	await loadPage();
+}
+
+async function switchStorageContext(context) {
+	await requestJson('/api/auth/storage-context', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ context: context })
+	});
+	await loadPage();
+}
+
+async function changeOwnPassword() {
+	const currentPassword = window.prompt('Current password');
+	if (!currentPassword) {
+		return;
+	}
+	const newPassword = window.prompt('New password (min 12 chars)');
+	if (!newPassword) {
+		return;
+	}
+	await requestJson('/api/auth/change-password', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			currentPassword: currentPassword,
+			newPassword: newPassword
+		})
+	});
+	setStatus('Password updated.');
+	await refreshAuthState();
+}
+
+async function openAdminUserManagement() {
+	const action = String(window.prompt('Admin action: list | create | reset | toggle | delete') || '').trim().toLowerCase();
+	if (!action) {
+		return;
+	}
+
+	if (action === 'list') {
+		const payload = await requestJson('/api/admin/users');
+		const labels = payload.users.map((entry) => `${entry.id} | ${entry.username} | ${entry.role} | ${entry.active ? 'active' : 'disabled'}`);
+		window.alert(labels.length ? labels.join('\n') : 'No users.');
+		return;
+	}
+
+	if (action === 'create') {
+		const username = String(window.prompt('Username') || '').trim();
+		if (!username) {
+			return;
+		}
+		const role = String(window.prompt('Role (user/admin)', 'user') || 'user').trim().toLowerCase() === 'admin' ? 'admin' : 'user';
+		const generate = window.confirm('Generate initial password automatically?');
+		const password = generate ? null : window.prompt('Initial password (min 12 chars)');
+		const payload = await requestJson('/api/admin/users', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				username: username,
+				role: role,
+				generatePassword: generate,
+				password: password || undefined
+			})
+		});
+		window.alert(payload.generatedPassword
+			? `User created. Initial password (show once): ${payload.generatedPassword}`
+			: 'User created.');
+		return;
+	}
+
+	if (action === 'reset') {
+		const userId = String(window.prompt('User ID for password reset') || '').trim();
+		if (!userId) {
+			return;
+		}
+		const generate = window.confirm('Generate new password automatically?');
+		const password = generate ? null : window.prompt('New password (min 12 chars)');
+		const payload = await requestJson(`/api/admin/users/${encodeURIComponent(userId)}/reset-password`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				generatePassword: generate,
+				password: password || undefined
+			})
+		});
+		window.alert(payload.generatedPassword
+			? `Password reset. New password (show once): ${payload.generatedPassword}`
+			: 'Password reset.');
+		return;
+	}
+
+	if (action === 'toggle') {
+		const userId = String(window.prompt('User ID to enable/disable') || '').trim();
+		if (!userId) {
+			return;
+		}
+		const active = window.confirm('Enable user? Click Cancel to disable.');
+		await requestJson(`/api/admin/users/${encodeURIComponent(userId)}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ active: active })
+		});
+		window.alert('User status updated.');
+		return;
+	}
+
+	if (action === 'delete') {
+		const userId = String(window.prompt('User ID to delete') || '').trim();
+		if (!userId) {
+			return;
+		}
+		if (!window.confirm('Delete this user permanently?')) {
+			return;
+		}
+		await requestJson(`/api/admin/users/${encodeURIComponent(userId)}`, {
+			method: 'DELETE'
+		});
+		window.alert('User deleted.');
+		return;
+	}
+}
+
 function applySearchFilter() {
 	renderCurrentDocumentList();
 }
@@ -1052,13 +1228,17 @@ async function closeViewer() {
 async function loadPage() {
 	setStatus('Loading documents...');
 	try {
-		const [config, fileList] = await Promise.all([
+		const [authState, config, fileList] = await Promise.all([
+			requestJson('/api/auth/me'),
 			requestJson('/api/config'),
 			requestJson('/api/files')
 		]);
 
+		appState.auth = authState;
 		appState.config = config;
 		appState.documents = fileList.documents;
+		appState.auth.storageContext = config.storageContext || appState.auth.storageContext || 'shared';
+		renderAuthControls();
 		elements.documentRoot.textContent = config.documentRoot;
 		elements.appBaseUrl.textContent = config.appBaseUrl;
 		elements.collaboraUrl.textContent = config.collaboraPublicUrl;
@@ -2046,6 +2226,36 @@ document.addEventListener('pointercancel', stopViewerResize);
 window.addEventListener('resize', syncViewerLayout);
 
 elements.refreshButton.addEventListener('click', loadPage);
+elements.loginButton.addEventListener('click', function() {
+	loginWithPrompt().catch(function(error) {
+		setStatus(error.message, true);
+	});
+});
+elements.logoutButton.addEventListener('click', function() {
+	logoutCurrentUser().catch(function(error) {
+		setStatus(error.message, true);
+	});
+});
+elements.myFilesButton.addEventListener('click', function() {
+	switchStorageContext('personal').catch(function(error) {
+		setStatus(error.message, true);
+	});
+});
+elements.sharedFilesButton.addEventListener('click', function() {
+	switchStorageContext('shared').catch(function(error) {
+		setStatus(error.message, true);
+	});
+});
+elements.accountButton.addEventListener('click', function() {
+	changeOwnPassword().catch(function(error) {
+		setStatus(error.message, true);
+	});
+});
+elements.adminButton.addEventListener('click', function() {
+	openAdminUserManagement().catch(function(error) {
+		setStatus(error.message, true);
+	});
+});
 elements.newMenuButton.addEventListener('click', function(event) {
 event.preventDefault();
 event.stopPropagation();
