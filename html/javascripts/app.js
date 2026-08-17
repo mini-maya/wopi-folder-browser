@@ -468,44 +468,45 @@ function getFileTypeKey(document) {
 		return 'folder';
 	}
 	const mimeType = document.mimeType || '';
-	if (mimeType.includes('spreadsheet')) {
+	if (mimeType.includes('spreadsheet') || mimeType.includes('spreadsheetml') || mimeType.includes('ms-excel')) {
 		return 'spreadsheet';
 	}
-	if (mimeType.includes('presentation')) {
+	if (mimeType.includes('presentation') || mimeType.includes('presentationml') || mimeType.includes('ms-powerpoint')) {
 		return 'presentation';
 	}
-	if (mimeType.includes('text') || mimeType.includes('csv')) {
+	if (mimeType.includes('text') || mimeType.includes('csv') || mimeType.includes('wordprocessingml') || mimeType.includes('msword')) {
 		return 'text';
 	}
 	return 'default';
 }
 
 function buildFilePreviewSvg(document) {
-	const MIME_COLOR_MAP = {
-		folder: '#d97706',
-		spreadsheet: '#2f9e44',
-		text: '#0f62fe',
-		presentation: '#f59f00',
-		default: '#64748b'
+	const MIME_SVG_MAP = {
+		spreadsheet: `
+			<svg fill="#007C3C" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+			<title>LibreOffice Calc</title>
+			<path d="M9 13H7v-1h2v1zm6-3h-2v1h2v-1zm-6 0H7v1h2v-1zm3 0h-2v1h2v-1zm3-10 7 7V0h-7zM9 14H7v1h2v-1zm5 3h1v-3h-1v3zm2 0h1v-1h-1v1zm-4 0h1v-2h-1v2zm1-17 9 9v12c0 1.662-1.338 3-3 3H5c-1.662 0-3-1.338-3-3V3c0-1.662 1.338-3 3-3h8zm5 13h-7v5h7v-5zm-2-4H6v7h4.5v-1H10v-1h.5v-1H10v-1h2v.5h1V12h2v.5h1V9z"/>
+			</svg>
+		`,
+		text: `
+			<svg fill="#083FA6" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+			<title>LibreOffice Writer</title>
+            <path d="M22 0v7l-7-7h7zm0 9v12c0 1.662-1.338 3-3 3H5c-1.662 0-3-1.338-3-3V3c0-1.662 1.338-3 3-3h8l9 9zM6 10h5V9H6v1zm0 2h5v-1H6v1zm0 2h5v-1H6v1zm5 3H6v1h5v-1zm7-2H6v1h12v-1zm0-6h-6v5h6V9zm-1.5 2a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1zM14 11l-1 2h3l-2-2z"/>
+            </svg>
+		`,
+		presentation: `
+			<svg fill="#D0120D" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+			<title>LibreOffice Impress</title><path d="M22 0v7l-7-7h7zm-9 0 9 9v12c0 1.662-1.338 3-3 3H5c-1.662 0-3-1.338-3-3V3c0-1.662 1.338-3 3-3h8zM7 17H6v1h1v-1zm0-2H6v1h1v-1zm0-2H6v1h1v-1zm3 4H8v1h2v-1zm0-2H8v1h2v-1zm0-2H8v1h2v-1zm6-1v-1H8v1h8zm2 1h-7v5h7v-5zm0-4H6v1h12V9zm-4 6.707 1 1 2.207-2.207-.707-.707-1.5 1.5-1-1-2.207 2.207.707.707 1.5-1.5z"/>
+			</svg>
+		`,
+		default: `
+			<svg fill="#7324A9" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+			<title>LibreOffice Base</title><path d="M17 13h-1v-1h1v1zm0 1h-1v1h1v-1zm0 2h-1v1h1v-1zm-.6-16H15l7 7V0h-5.6zM13 0l9 9v12c0 1.662-1.338 3-3 3H5c-1.662 0-3-1.338-3-3V3c0-1.662 1.338-3 3-3h8zM6 11c0 .552 1.343 1 3 1s3-.448 3-1v-1c0-.552-1.343-1-3-1s-3 .448-3 1v1zm0 2c0 .552 1.343 1 3 1s3-.448 3-1v-1c0 .552-1.343 1-3 1s-3-.448-3-1v1zm0 2c0 .552 1.343 1 3 1s3-.448 3-1v-1c0 .552-1.343 1-3 1s-3-.448-3-1v1zm0 2c0 .552 1.343 1 3 1s3-.448 3-1v-1c0 .552-1.343 1-3 1s-3-.448-3-1v1zm12-6h-5v7h5v-7zm-3 1h-1v1h1v-1zm0 4h-1v1h1v-1zm0-2h-1v1h1v-1z"/>
+			</svg>
+		`
 	};
 	const typeKey = getFileTypeKey(document);
-	const label = document.isDirectory
-		? 'FOLDER'
-		: (document.name ? document.name.split('.').pop() || 'FILE' : 'FILE').toUpperCase();
-	const fill = MIME_COLOR_MAP[typeKey];
-	const svg = `
-		<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">
-			<defs>
-				<linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
-					<stop offset="0%" stop-color="#f8fafc"/>
-					<stop offset="100%" stop-color="#e2e8f0"/>
-				</linearGradient>
-			</defs>
-			<rect width="240" height="160" rx="18" fill="url(#bg)"/>
-			<rect x="22" y="20" width="196" height="120" rx="12" fill="${fill}" opacity="0.16"/>
-			<path d="M70 34h72l34 34v54c0 7-6 13-13 13H70c-7 0-13-6-13-13V47c0-7 6-13 13-13zm72 0v32h34" fill="none" stroke="${fill}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-			<text x="120" y="95" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="${fill}">${escapeHtml(label.substring(0, 4))}</text>
-		</svg>`;
+	const svg = MIME_SVG_MAP[typeKey];
 	return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
@@ -528,17 +529,15 @@ function renderDocumentRow(document, depth) {
 				<input type="checkbox" class="file-select-checkbox" data-file-id="${document.id}" ${isSelected ? 'checked' : ''} aria-label="Select ${escapeHtml(document.name)}">
 			</td>
 			<td class="tree-name-cell">
-				<div class="file-row-main tree-row-main" style="padding-left: ${depth * 1.25}rem">
+				<div class="file-row-main tree-row-main" style="padding-left: ${depth * 2.95}rem">
 					${isFolder ? `<button type="button" class="tree-toggle" data-action="toggle-folder" data-file-id="${document.id}" aria-label="${toggleLabel}" aria-expanded="${isExpanded ? 'true' : 'false'}">${isExpanded ? '▾' : '▸'}</button>` : '<span class="tree-toggle-spacer" aria-hidden="true"></span>'}
 					<img class="file-row-preview ${isFolder ? 'folder-icon' : ''}" src="${previewUrl}" alt="${escapeHtml(document.name)} preview">
 					<div>
 						<div class="file-name">${escapeHtml(document.name)}</div>
-						<div class="file-meta">${isFolder ? 'Folder' : escapeHtml(document.mimeType)}</div>
-						<div class="entry-badge">${isFolder ? 'Folder' : 'File'}</div>
 					</div>
 				</div>
 			</td>
-			<td>${escapeHtml(document.relativePath)}</td>
+			<td>${escapeHtml(document.relativePath.split('/').filter(Boolean).join(' / '))}</td>
 			<td>${formatDate(document.updatedAt)}</td>
 			<td>${isFolder ? '—' : formatBytes(document.size)}</td>
 			<td>
@@ -770,7 +769,7 @@ async function renderVersionList(fileId) {
 						return;
 					}
 					const isCurrent = versions[0]?.id === version.id;
-					menuEntries.push({ label: 'View', action: 'version-view', danger: false, accent: true });
+					menuEntries.push({ label: 'View', action: 'version-view', danger: false });
 					menuEntries.push({ divider: true });
 					menuEntries.push(isCurrent
 						? { label: 'Name current', action: 'version-name-current', danger: false }
