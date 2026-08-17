@@ -1537,6 +1537,7 @@ async function moveDocument(fileId, targetNameOverride, targetDirectoryOverride)
 			await moveDocument(fileId, targetNameOverride, targetDirectoryOverride);
 			return;
 		}
+		appState.integrationPendingData = null;
 		throw error;
 	}
 }
@@ -1606,6 +1607,7 @@ async function copyDocument(fileId, targetNameOverride, targetDirectoryOverride)
 			await copyDocument(fileId, targetNameOverride, targetDirectoryOverride);
 			return;
 		}
+		appState.integrationPendingData = null;
 		throw error;
 	}
 }
@@ -1866,21 +1868,26 @@ async function submitFolderTargetDialog(event) {
 			if (!documents.length) {
 				return;
 			}
-			if (isBulkMode) {
-				if (action === 'move') {
-					await moveDocuments(documents, targetDirectory);
+			try {
+				if (isBulkMode) {
+					if (action === 'move') {
+						await moveDocuments(documents, targetDirectory);
+					} else {
+						await copyDocuments(documents, targetDirectory);
+					}
 				} else {
-					await copyDocuments(documents, targetDirectory);
+					const fileId = selectionIds[0];
+					if (action === 'move') {
+						await moveDocument(fileId, targetName, targetDirectory);
+					} else if (action === 'save-as') {
+						await copyDocument(fileId, targetName, targetDirectory);
+					} else {
+						await copyDocument(fileId, targetName, targetDirectory);
+					}
 				}
-			} else {
-				const fileId = selectionIds[0];
-				if (action === 'move') {
-					await moveDocument(fileId, targetName, targetDirectory);
-				} else if (action === 'save-as') {
-					await copyDocument(fileId, targetName, targetDirectory);
-				} else {
-					await copyDocument(fileId, targetName, targetDirectory);
-				}
+			} catch (error) {
+				setStatus(error.message, true);
+				return;
 			}
 			await loadPage();
 			closeFolderTargetDialog();
