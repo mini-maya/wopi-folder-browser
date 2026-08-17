@@ -1020,6 +1020,12 @@ async function showConflictDialog(conflict, operationLabel) {
 			: '<button type="button" data-conflict-action="overwrite">Overwrite</button>' +
 				'<button type="button" data-conflict-action="keep_both" class="secondary">Keep both</button>' +
 				'<button type="button" data-conflict-action="skip" class="secondary">Skip</button>';
+		const sourceParentPath = (conflict?.source?.relativePath || '').includes('/')
+			? (conflict.source.relativePath || '').slice(0, (conflict.source.relativePath || '').lastIndexOf('/'))
+			: '';
+		const targetParentPath = (conflict?.target?.relativePath || '').includes('/')
+			? (conflict.target.relativePath || '').slice(0, (conflict.target.relativePath || '').lastIndexOf('/'))
+			: '';
 		const modal = document.createElement('div');
 		modal.className = 'modal';
 		modal.setAttribute('aria-hidden', 'false');
@@ -1038,6 +1044,7 @@ async function showConflictDialog(conflict, operationLabel) {
 						<div class="details-card" style="padding: 12px; border: 1px solid var(--border-color, rgba(255,255,255,0.12)); border-radius: 12px;">
 							<strong>Source</strong>
 							<div>${escapeHtml(conflict?.source?.name || 'Unknown')}</div>
+							${sourceParentPath ? `<div>${escapeHtml(sourceParentPath)}</div>` : ''}
 							<div>${escapeHtml(conflict?.source?.type === 'directory' ? 'Folder' : 'File')}</div>
 							<div>${conflict?.source?.size != null ? escapeHtml(formatBytes(conflict.source.size)) : '—'}</div>
 							<div>${conflict?.source?.modifiedAt ? escapeHtml(formatDate(conflict.source.modifiedAt)) : '—'}</div>
@@ -1045,6 +1052,7 @@ async function showConflictDialog(conflict, operationLabel) {
 						<div class="details-card" style="padding: 12px; border: 1px solid var(--border-color, rgba(255,255,255,0.12)); border-radius: 12px;">
 							<strong>Existing target</strong>
 							<div>${escapeHtml(conflict?.target?.name || 'Unknown')}</div>
+							${targetParentPath ? `<div>${escapeHtml(targetParentPath)}</div>` : ''}
 							<div>${escapeHtml(conflict?.target?.type === 'directory' ? 'Folder' : 'File')}</div>
 							<div>${conflict?.target?.size != null ? escapeHtml(formatBytes(conflict.target.size)) : '—'}</div>
 							<div>${conflict?.target?.modifiedAt ? escapeHtml(formatDate(conflict.target.modifiedAt)) : '—'}</div>
