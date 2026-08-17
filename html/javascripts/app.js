@@ -83,6 +83,8 @@ const appState = {
 	folderPickerSelectionIds: [],
 	folderPickerBulkMode: false,
 	versionRenameId: null,
+	newDocumentType: null,
+	newDocumentDirectory: '',
 	contextMenuFileId: null,
 	bulkActionsMenuOpen: false,
 	newDocumentMenuOpen: false,
@@ -1360,23 +1362,15 @@ async function openDocument(fileId, mode) {
 }
 
 async function createDocumentInDirectory(type, directory) {
-	setStatus(`Creating ${type} document...`);
-	try {
-		const payload = await requestJson('/api/files', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				type: type,
-				directory: directory || undefined,
-				mode: 'edit'
-			})
-		});
-		submitLaunchPayload(payload);
-		setStatus(`Created and opened ${payload.file.name}.`);
-		await loadPage();
-	} catch (error) {
-		setStatus(error.message, true);
-	}
+	openNameEntryDialog({
+		action: 'new-document',
+		title: getCreateDocumentDialogTitle(type),
+		buttonText: 'Create',
+		defaultValue: getDefaultDocumentNameByType(type),
+		fileId: null,
+		directory: directory || '',
+		documentType: type
+	});
 }
 
 async function createFolderInDirectory(directory) {
@@ -1487,18 +1481,52 @@ async function getVersionLabel(fileId, versionId) {
 	return version?.label ?? '';
 }
 
-function openNameEntryDialog({ action, title, buttonText, defaultValue, fileId, directory, versionId }) {
+function getDefaultDocumentNameByType(type) {
+	const configuredDefaults = appState.config?.defaultDocumentNames || {};
+	const extension = type === 'spreadsheet' ? '.ods'
+		: type === 'presentation' ? '.odp'
+			: type === 'microsoft-text' ? '.docx'
+				: type === 'microsoft-spreadsheet' ? '.xlsx'
+					: type === 'microsoft-presentation' ? '.pptx'
+						: '.odt';
+	const fallbackBaseName = type === 'spreadsheet' || type === 'microsoft-spreadsheet'
+		? 'Untitled spreadsheet'
+		: type === 'presentation' || type === 'microsoft-presentation'
+			? 'Untitled presentation'
+			: 'Untitled document';
+	const configuredName = configuredDefaults[type] || `${fallbackBaseName}${extension}`;
+	return configuredName.endsWith(extension) ? configuredName : `${configuredName}${extension}`;
+}
+
+function getCreateDocumentDialogTitle(type) {
+	return type === 'spreadsheet'
+		? 'Create new spreadsheet'
+		: type === 'presentation'
+			? 'Create new presentation'
+			: type === 'microsoft-text'
+				? 'Create new Microsoft Word document'
+				: type === 'microsoft-spreadsheet'
+					? 'Create new Microsoft Excel spreadsheet'
+					: type === 'microsoft-presentation'
+						? 'Create new Microsoft PowerPoint presentation'
+						: 'Create new text document';
+}
+
+function openNameEntryDialog({ action, title, buttonText, defaultValue, fileId, directory, versionId, documentType }) {
 	const documentEntry = fileId ? getDocumentById(fileId) : null;
 	const needsTargetDirectory = action === 'new-folder' || action === 'save-as';
 	appState.folderPickerAction = action;
 	appState.folderPickerSelectionIds = fileId ? [fileId] : [];
 	appState.folderPickerBulkMode = false;
 	appState.versionRenameId = versionId ?? null;
+	appState.newDocumentType = documentType ?? null;
+	appState.newDocumentDirectory = directory || '';
 	elements.folderPickerModal.classList.remove('hidden');
 	elements.folderPickerModal.setAttribute('aria-hidden', 'false');
 	elements.folderPickerTitle.textContent = title;
 	elements.folderPickerConfirm.textContent = buttonText;
 	elements.folderPickerTarget.closest('.modal-field').classList.toggle('hidden', !needsTargetDirectory);
+	elements.folderPickerName.closest('.modal-field').classList.remove('hidden');
 	if (needsTargetDirectory) {
 		const options = getFolderOptions();
 		elements.folderPickerTarget.innerHTML = options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('');
@@ -1521,7 +1549,11 @@ function prepareFolderPickerNameSelection() {
 	const selectedDocument = appState.folderPickerSelectionIds[0]
 		? getDocumentById(appState.folderPickerSelectionIds[0])
 		: null;
-	if (appState.folderPickerAction === 'save-as' || (selectedDocument && !isFolderEntry(selectedDocument))) {
+	if (
+		appState.folderPickerAction === 'save-as'
+		|| appState.folderPickerAction === 'new-document'
+		|| (selectedDocument && !isFolderEntry(selectedDocument))
+	) {
 		selectBasenameForInput(elements.folderPickerName, elements.folderPickerName.value);
 	}
 }
@@ -1545,6 +1577,7 @@ function openFolderTargetDialog(action, fileIds) {
 	elements.folderPickerTitle.textContent = isBulkMode
 		? (action === 'move' ? 'Move selected items to folder' : (action === 'save-as' ? 'Save selected item as' : 'Copy selected items to folder'))
 		: (action === 'move' ? 'Move to folder' : (action === 'save-as' ? 'Save copy as' : 'Copy to folder'));
+	elements.folderPickerTarget.closest('.modal-field').classList.remove('hidden');
 	elements.folderPickerName.closest('.modal-field').classList.toggle('hidden', isBulkMode);
 	populateFolderPicker(selectedDocuments[0], action === 'save-as' ? false : isBulkMode);
 	if (action === 'save-as') {
@@ -1566,6 +1599,8 @@ function closeFolderTargetDialog() {
 	appState.folderPickerSelectionIds = [];
 	appState.folderPickerBulkMode = false;
 	appState.versionRenameId = null;
+	appState.newDocumentType = null;
+	appState.newDocumentDirectory = '';
 	elements.folderPickerModal.classList.add('hidden');
 	elements.folderPickerModal.setAttribute('aria-hidden', 'true');
 }
@@ -1584,6 +1619,28 @@ async function submitFolderTargetDialog(event) {
 	}
 
 	switch (action) {
+		case 'new-document': {
+			if (!appState.newDocumentType) {
+				setStatus('Document type is missing for this creation action.', true);
+				return;
+			}
+			setStatus(`Creating ${appState.newDocumentType} document...`);
+			const payload = await requestJson('/api/files', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					type: appState.newDocumentType,
+					fileName: targetName,
+					directory: appState.newDocumentDirectory || undefined,
+					mode: 'edit'
+				})
+			});
+			submitLaunchPayload(payload);
+			await loadPage();
+			closeFolderTargetDialog();
+			setStatus(`Created and opened ${payload.file.name}.`);
+			return;
+		}
 		case 'new-folder': {
 			await requestJson('/api/folders', {
 				method: 'POST',

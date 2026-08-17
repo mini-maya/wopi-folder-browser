@@ -81,6 +81,20 @@ function getDocumentTypeName(type) {
 	return null;
 }
 
+function getDocumentTypeFileName(type) {
+	const baseName = getDocumentTypeName(type);
+	if (!baseName) {
+		return null;
+	}
+	const extension = type === 'spreadsheet' ? '.ods'
+		: type === 'presentation' ? '.odp'
+			: type === 'microsoft-text' ? '.docx'
+				: type === 'microsoft-spreadsheet' ? '.xlsx'
+					: type === 'microsoft-presentation' ? '.pptx'
+						: '.odt';
+	return baseName.endsWith(extension) ? baseName : `${baseName}${extension}`;
+}
+
 function mapDocumentListWithUserState(documents, userState) {
 	const favoriteSet = new Set(userState.favorites);
 	const recentMap = new Map(userState.recent.map((entry) => [entry.fileId, entry.openedAt]));
@@ -155,6 +169,14 @@ router.get('/config', function(req, res) {
 			allowPdfExport: config.allowPdfExport,
 			allowPublicEditing: config.allowPublicEditing,
 			previewGeneration: config.previewGeneration
+		},
+		defaultDocumentNames: {
+			text: getDocumentTypeFileName('text'),
+			spreadsheet: getDocumentTypeFileName('spreadsheet'),
+			presentation: getDocumentTypeFileName('presentation'),
+			'microsoft-text': getDocumentTypeFileName('microsoft-text'),
+			'microsoft-spreadsheet': getDocumentTypeFileName('microsoft-spreadsheet'),
+			'microsoft-presentation': getDocumentTypeFileName('microsoft-presentation')
 		}
 	});
 });
