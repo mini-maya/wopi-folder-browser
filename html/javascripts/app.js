@@ -101,7 +101,8 @@ const appState = {
 		user: null,
 		storageContext: 'shared'
 	},
-	adminUsers: []
+	adminUsers: [],
+	applyConflictToAll: false
 };
 
 const DEFAULT_VIEWER_TITLE = 'No document opened yet';
@@ -1001,6 +1002,96 @@ async function handleVersionAction(action, fileId, versionId) {
 	}
 }
 
+function formatConflictItemSummary(entry) {
+	if (!entry) {
+		return 'Unknown item';
+	}
+	const typeLabel = entry.type === 'directory' ? 'Folder' : 'File';
+	const sizeLabel = entry.size != null ? ` · ${formatBytes(entry.size)}` : '';
+	const modifiedLabel = entry.modifiedAt ? ` · ${formatDate(entry.modifiedAt)}` : '';
+	return `${entry.name || 'Untitled'} · ${typeLabel}${sizeLabel}${modifiedLabel}`;
+}
+
+async function showConflictDialog(conflict, operationLabel) {
+	return new Promise((resolve) => {
+		const isDirectoryConflict = conflict?.conflictType === 'directory' || conflict?.source?.type === 'directory' || conflict?.target?.type === 'directory';
+		const title = isDirectoryConflict ? 'Folder already exists' : 'File already exists';
+		const description = isDirectoryConflict
+			? 'A folder with this name already exists at the target location. Choose how to continue.'
+			: 'A file with this name already exists at the target location. Choose how to continue.';
+		const actionButtons = isDirectoryConflict
+			? '<button type="button" data-conflict-action="replace">Replace folder</button>' +
+				'<button type="button" data-conflict-action="integrate" class="secondary">Integrate folder</button>' +
+				'<button type="button" data-conflict-action="skip" class="secondary">Skip</button>'
+			: '<button type="button" data-conflict-action="overwrite">Overwrite</button>' +
+				'<button type="button" data-conflict-action="keep_both" class="secondary">Keep both</button>' +
+				'<button type="button" data-conflict-action="skip" class="secondary">Skip</button>';
+		const modal = document.createElement('div');
+		modal.className = 'modal';
+		modal.setAttribute('aria-hidden', 'false');
+		modal.innerHTML = `
+			<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="conflict-dialog-title">
+				<div class="modal-header">
+					<div>
+						<h3 id="conflict-dialog-title">${title}</h3>
+						<p class="modal-description">${escapeHtml(operationLabel || 'This operation')} will decide how the existing item is handled.</p>
+					</div>
+					<button type="button" class="secondary" data-conflict-action="cancel">Cancel</button>
+				</div>
+				<div class="modal-body">
+					<p class="file-meta">${description}</p>
+					<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0;">
+						<div class="details-card" style="padding: 12px; border: 1px solid var(--border-color, rgba(255,255,255,0.12)); border-radius: 12px;">
+							<strong>Source</strong>
+							<div>${escapeHtml(conflict?.source?.name || 'Unknown')}</div>
+							<div>${escapeHtml(conflict?.source?.type === 'directory' ? 'Folder' : 'File')}</div>
+							<div>${conflict?.source?.size != null ? escapeHtml(formatBytes(conflict.source.size)) : '—'}</div>
+							<div>${conflict?.source?.modifiedAt ? escapeHtml(formatDate(conflict.source.modifiedAt)) : '—'}</div>
+						</div>
+						<div class="details-card" style="padding: 12px; border: 1px solid var(--border-color, rgba(255,255,255,0.12)); border-radius: 12px;">
+							<strong>Existing target</strong>
+							<div>${escapeHtml(conflict?.target?.name || 'Unknown')}</div>
+							<div>${escapeHtml(conflict?.target?.type === 'directory' ? 'Folder' : 'File')}</div>
+							<div>${conflict?.target?.size != null ? escapeHtml(formatBytes(conflict.target.size)) : '—'}</div>
+							<div>${conflict?.target?.modifiedAt ? escapeHtml(formatDate(conflict.target.modifiedAt)) : '—'}</div>
+						</div>
+					</div>
+					<label class="checkbox-field" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+						<input type="checkbox" id="conflict-apply-all">
+						<span>Apply to all conflicts in this batch</span>
+					</label>
+					<div class="modal-actions" style="justify-content:flex-start; gap: 8px; flex-wrap: wrap;">
+						${actionButtons}
+					</div>
+				</div>
+			</div>
+		`;
+		const close = () => {
+			modal.remove();
+		};
+		for (const button of modal.querySelectorAll('[data-conflict-action]')) {
+			button.addEventListener('click', function() {
+				const action = button.dataset.conflictAction;
+				const applyToAll = !!modal.querySelector('#conflict-apply-all')?.checked;
+				appState.applyConflictToAll = applyToAll;
+				close();
+				if (action === 'cancel') {
+					resolve(null);
+					return;
+				}
+				resolve(action);
+			});
+		}
+		document.body.appendChild(modal);
+		const applyAllCheckbox = modal.querySelector('#conflict-apply-all');
+		if (applyAllCheckbox) {
+			applyAllCheckbox.addEventListener('change', function() {
+				appState.applyConflictToAll = applyAllCheckbox.checked;
+			});
+		}
+	});
+}
+
 async function requestJson(url, options = {}) {
 	const response = await fetch(url, options);
 	let payload;
@@ -1013,7 +1104,10 @@ async function requestJson(url, options = {}) {
 
 	if (!response.ok) {
 		const message = payload?.error ?? `Request failed with status ${response.status}.`;
-		throw new Error(message);
+		const error = new Error(message);
+		error.status = response.status;
+		error.payload = payload;
+		throw error;
 	}
 
 	return payload;
@@ -1401,11 +1495,31 @@ async function renameDocument(fileId, nextNameOverride) {
 		});
 		return;
 	}
-	await requestJson(`/api/files/${encodeURIComponent(fileId)}/move`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ targetName: nextNameOverride })
-	});
+	try {
+		await requestJson(`/api/files/${encodeURIComponent(fileId)}/move`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ targetName: nextNameOverride })
+		});
+		await loadPage();
+		setStatus('Renamed successfully.');
+	} catch (error) {
+		if (error?.payload?.error === 'FILE_CONFLICT') {
+			const resolution = await showConflictDialog(error.payload, 'Rename');
+			if (!resolution) {
+				return;
+			}
+			await requestJson(`/api/files/${encodeURIComponent(fileId)}/move`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ targetName: nextNameOverride, conflictResolution: resolution })
+			});
+			await loadPage();
+			setStatus('Renamed successfully.');
+			return;
+		}
+		throw error;
+	}
 }
 
 async function moveDocument(fileId, targetNameOverride, targetDirectoryOverride) {
@@ -1413,14 +1527,38 @@ async function moveDocument(fileId, targetNameOverride, targetDirectoryOverride)
 		setStatus('A target name is required for this move operation.', true);
 		return;
 	}
-	await requestJson(`/api/files/${encodeURIComponent(fileId)}/move`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			targetDirectory: targetDirectoryOverride,
-			targetName: targetNameOverride || undefined
-		})
-	});
+	try {
+		await requestJson(`/api/files/${encodeURIComponent(fileId)}/move`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				targetDirectory: targetDirectoryOverride,
+				targetName: targetNameOverride || undefined
+			})
+		});
+		await loadPage();
+		setStatus('Moved successfully.');
+	} catch (error) {
+		if (error?.payload?.error === 'FILE_CONFLICT') {
+			const resolution = await showConflictDialog(error.payload, 'Move');
+			if (!resolution) {
+				return;
+			}
+			await requestJson(`/api/files/${encodeURIComponent(fileId)}/move`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					targetDirectory: targetDirectoryOverride,
+					targetName: targetNameOverride || undefined,
+					conflictResolution: resolution
+				})
+			});
+			await loadPage();
+			setStatus('Moved successfully.');
+			return;
+		}
+		throw error;
+	}
 }
 
 async function copyDocument(fileId, targetNameOverride, targetDirectoryOverride) {
@@ -1428,14 +1566,38 @@ async function copyDocument(fileId, targetNameOverride, targetDirectoryOverride)
 		setStatus('A target name is required for this copy operation.', true);
 		return;
 	}
-	await requestJson(`/api/files/${encodeURIComponent(fileId)}/copy`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			targetDirectory: targetDirectoryOverride,
-			targetName: targetNameOverride || undefined
-		})
-	});
+	try {
+		await requestJson(`/api/files/${encodeURIComponent(fileId)}/copy`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				targetDirectory: targetDirectoryOverride,
+				targetName: targetNameOverride || undefined
+			})
+		});
+		await loadPage();
+		setStatus('Copied successfully.');
+	} catch (error) {
+		if (error?.payload?.error === 'FILE_CONFLICT') {
+			const resolution = await showConflictDialog(error.payload, 'Copy');
+			if (!resolution) {
+				return;
+			}
+			await requestJson(`/api/files/${encodeURIComponent(fileId)}/copy`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					targetDirectory: targetDirectoryOverride,
+					targetName: targetNameOverride || undefined,
+					conflictResolution: resolution
+				})
+			});
+			await loadPage();
+			setStatus('Copied successfully.');
+			return;
+		}
+		throw error;
+	}
 }
 
 function getFolderOptions() {
@@ -1985,29 +2147,75 @@ async function submitUploadDialog() {
 }
 
 async function moveDocuments(documents, targetDirectory) {
+	let defaultResolution = null;
 	for (const document of documents) {
-		await requestJson(`/api/files/${encodeURIComponent(document.id)}/move`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				targetDirectory: targetDirectory || undefined,
-				targetName: document.name
-			})
-		});
+		const basePayload = {
+			targetDirectory: targetDirectory || undefined,
+			targetName: document.name
+		};
+		try {
+			await requestJson(`/api/files/${encodeURIComponent(document.id)}/move`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(defaultResolution ? { ...basePayload, conflictResolution: defaultResolution } : basePayload)
+			});
+		} catch (error) {
+			if (error?.payload?.error !== 'FILE_CONFLICT') {
+				throw error;
+			}
+			const resolution = appState.applyConflictToAll
+				? (defaultResolution || await showConflictDialog(error.payload, 'Move selected items'))
+				: await showConflictDialog(error.payload, 'Move selected items');
+			if (!resolution) {
+				continue;
+			}
+			if (appState.applyConflictToAll) {
+				defaultResolution = resolution;
+			}
+			await requestJson(`/api/files/${encodeURIComponent(document.id)}/move`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ ...basePayload, conflictResolution: resolution })
+			});
+		}
 	}
+	appState.applyConflictToAll = false;
 }
 
 async function copyDocuments(documents, targetDirectory) {
+	let defaultResolution = null;
 	for (const document of documents) {
-		await requestJson(`/api/files/${encodeURIComponent(document.id)}/copy`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				targetDirectory: targetDirectory || undefined,
-				targetName: document.name
-			})
-		});
+		const basePayload = {
+			targetDirectory: targetDirectory || undefined,
+			targetName: document.name
+		};
+		try {
+			await requestJson(`/api/files/${encodeURIComponent(document.id)}/copy`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(defaultResolution ? { ...basePayload, conflictResolution: defaultResolution } : basePayload)
+			});
+		} catch (error) {
+			if (error?.payload?.error !== 'FILE_CONFLICT') {
+				throw error;
+			}
+			const resolution = appState.applyConflictToAll
+				? (defaultResolution || await showConflictDialog(error.payload, 'Copy selected items'))
+				: await showConflictDialog(error.payload, 'Copy selected items');
+			if (!resolution) {
+				continue;
+			}
+			if (appState.applyConflictToAll) {
+				defaultResolution = resolution;
+			}
+			await requestJson(`/api/files/${encodeURIComponent(document.id)}/copy`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ ...basePayload, conflictResolution: resolution })
+			});
+		}
 	}
+	appState.applyConflictToAll = false;
 }
 
 function downloadBlob(blob, downloadName) {

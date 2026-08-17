@@ -58,7 +58,14 @@ app.use(function(err, req, res, next) {
 	const status = err.status || 500;
 	const message = err.message || 'Internal Server Error';
 	if (req.path.startsWith('/api') || req.path.startsWith('/wopi')) {
-		res.status(status).json({ error: message });
+		const payload = { error: err.code || message };
+		if (err.details && typeof err.details === 'object') {
+			Object.assign(payload, err.details);
+		}
+		if (!payload.message) {
+			payload.message = message;
+		}
+		res.status(status).json(payload);
 		return;
 	}
 

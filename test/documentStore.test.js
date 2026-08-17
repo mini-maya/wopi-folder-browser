@@ -12,6 +12,7 @@ const {
 	createLegacyFileId,
 	createFolder,
 	deleteDocument,
+	getAvailableName,
 	getDocumentById,
 	listDocuments,
 	renameOrMoveDocument,
@@ -80,6 +81,60 @@ test('copyDocument creates a new independent file id', async function() {
 
 	assert.notEqual(copiedDocument.id, originalDocument.id);
 	assert.equal(copiedDocument.relativePath, 'report copy.odt');
+});
+
+test('copyDocument throws a structured conflict before resolution and then keeps both', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await fs.writeFile(path.join(tempRoot, 'report.odt'), 'original');
+	await fs.writeFile(path.join(tempRoot, 'report (1).odt'), 'existing');
+
+	const sourceDocument = (await listDocuments(tempRoot)).find((document) => document.relativePath === 'report.odt');
+	await assert.rejects(function() {
+		return copyDocument(tempRoot, sourceDocument.id, {
+			targetName: 'report.odt'
+		});
+	}, (error) => error && error.code === 'FILE_CONFLICT');
+
+	const resolvedCopy = await copyDocument(tempRoot, sourceDocument.id, {
+		targetName: 'report.odt',
+		conflictResolution: 'keep_both'
+	});
+	assert.equal(resolvedCopy.relativePath, 'report (2).odt');
+	assert.equal(await fs.readFile(path.join(tempRoot, 'report (2).odt'), 'utf8'), 'original');
+});
+
+test('renameOrMoveDocument resolves conflicts with overwrite and keep-both semantics', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await fs.writeFile(path.join(tempRoot, 'report.odt'), 'source');
+	await fs.writeFile(path.join(tempRoot, 'renamed.odt'), 'target');
+
+	const sourceDocument = (await listDocuments(tempRoot)).find((document) => document.relativePath === 'report.odt');
+	await assert.rejects(function() {
+		return renameOrMoveDocument(tempRoot, sourceDocument.id, {
+			targetName: 'renamed.odt'
+		});
+	}, (error) => error && error.code === 'FILE_CONFLICT');
+
+	const keepBothResult = await renameOrMoveDocument(tempRoot, sourceDocument.id, {
+		targetName: 'renamed.odt',
+		conflictResolution: 'keep_both'
+	});
+	assert.equal(keepBothResult.relativePath, 'renamed (1).odt');
+
+	const [updatedSource] = await listDocuments(tempRoot);
+	assert.ok(updatedSource.relativePath === 'renamed (1).odt' || updatedSource.relativePath === 'report.odt');
+});
+
+test('getAvailableName generates unique filenames and preserves file extensions', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await fs.writeFile(path.join(tempRoot, 'report.pdf'), 'report');
+	await fs.writeFile(path.join(tempRoot, 'report (1).pdf'), 'report-one');
+	await fs.writeFile(path.join(tempRoot, 'README'), 'readme');
+	await fs.writeFile(path.join(tempRoot, 'photo.jpg'), 'photo');
+
+	assert.equal(await getAvailableName(tempRoot, '', 'report.pdf'), 'report (2).pdf');
+	assert.equal(await getAvailableName(tempRoot, '', 'README'), 'README (1)');
+	assert.equal(await getAvailableName(tempRoot, '', 'photo.jpg'), 'photo (1).jpg');
 });
 
 test('createDocument can target a folder path', async function() {

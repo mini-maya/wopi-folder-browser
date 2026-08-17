@@ -410,10 +410,17 @@ router.post('/uploads', upload.array('files'), async function(req, res, next) {
 router.post('/files/:fileId/move', async function(req, res, next) {
 	try {
 		const user = getRequestUser(req);
-		const document = await renameOrMoveDocument(getDocumentRoot(req), req.params.fileId, {
+		const result = await renameOrMoveDocument(getDocumentRoot(req), req.params.fileId, {
 			targetDirectory: req.body.targetDirectory,
-			targetName: req.body.targetName
+			targetName: req.body.targetName,
+			conflictResolution: req.body.conflictResolution,
+			operation: 'move'
 		});
+		if (result && result.skipped) {
+			res.json({ skipped: true, operation: 'move', conflict: result.conflict });
+			return;
+		}
+		const document = result || await getDocumentById(getDocumentRoot(req), req.params.fileId);
 		await appendActivity(getDocumentRoot(req), {
 			type: 'move',
 			fileId: document.id,
@@ -424,6 +431,10 @@ router.post('/files/:fileId/move', async function(req, res, next) {
 		await invalidatePreview(getDocumentRoot(req), document);
 		res.json({ file: document });
 	} catch (error) {
+		if (error && error.code === 'FILE_CONFLICT') {
+			res.status(409).json(error.details || { error: 'FILE_CONFLICT', message: error.message });
+			return;
+		}
 		next(error);
 	}
 });
@@ -431,10 +442,17 @@ router.post('/files/:fileId/move', async function(req, res, next) {
 router.post('/files/:fileId/copy', async function(req, res, next) {
 	try {
 		const user = getRequestUser(req);
-		const copiedDocument = await copyDocument(getDocumentRoot(req), req.params.fileId, {
+		const result = await copyDocument(getDocumentRoot(req), req.params.fileId, {
 			targetDirectory: req.body.targetDirectory,
-			targetName: req.body.targetName
+			targetName: req.body.targetName,
+			conflictResolution: req.body.conflictResolution,
+			operation: 'copy'
 		});
+		if (result && result.skipped) {
+			res.json({ skipped: true, operation: 'copy', conflict: result.conflict });
+			return;
+		}
+		const copiedDocument = result;
 		await appendActivity(getDocumentRoot(req), {
 			type: 'copy',
 			fileId: copiedDocument.id,
@@ -445,6 +463,10 @@ router.post('/files/:fileId/copy', async function(req, res, next) {
 		await invalidatePreview(getDocumentRoot(req), copiedDocument);
 		res.status(201).json({ file: copiedDocument });
 	} catch (error) {
+		if (error && error.code === 'FILE_CONFLICT') {
+			res.status(409).json(error.details || { error: 'FILE_CONFLICT', message: error.message });
+			return;
+		}
 		next(error);
 	}
 });
