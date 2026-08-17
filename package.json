@@ -5,6 +5,7 @@
   "description": "Folder-backed WOPI host for Collabora Online",
   "scripts": {
     "start": "node ./bin/www",
+    "setup:admin": "node ./bin/init-admin.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {

@@ -56,9 +56,24 @@ Additional extensions can be added in `lib/documentStore.js`.
 
 4. Open `http://localhost:3000`.
 
+5. Create the initial admin account from inside the app container:
+
+   ```sh
+   docker compose exec app npm run setup:admin -- --username admin --password "ChangeThisNow123!"
+   ```
+
+   The command is one-time only. A second run returns an error because setup is already completed.
+
 The browser talks to the app on `localhost:3000`, while the Collabora container talks to the same app over the internal Docker network using the service name `app:3000`.
 
 This local Compose setup is intentionally **plain HTTP end-to-end**. Do not enable `ssl.termination=true` unless you actually put Collabora behind an HTTPS reverse proxy that terminates TLS.
+
+For production Compose:
+
+```sh
+docker compose --env-file .env.production -f docker-compose.prod.yml exec app \
+  npm run setup:admin -- --username admin --password "ChangeThisNow123!"
+```
 
 ## Configuration
 

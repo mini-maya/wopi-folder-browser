@@ -50,7 +50,26 @@ const elements = {
 	uploadSelectionList: document.querySelector('#upload-selection-list'),
 	uploadErrors: document.querySelector('#upload-errors'),
 	uploadCancel: document.querySelector('#upload-cancel'),
-	uploadConfirm: document.querySelector('#upload-confirm')
+	uploadConfirm: document.querySelector('#upload-confirm'),
+	loginModal: document.querySelector('#login-modal'),
+	loginCancel: document.querySelector('#login-cancel'),
+	loginForm: document.querySelector('#login-form'),
+	loginUsername: document.querySelector('#login-username'),
+	loginPassword: document.querySelector('#login-password'),
+	accountModal: document.querySelector('#account-modal'),
+	accountCancel: document.querySelector('#account-cancel'),
+	accountForm: document.querySelector('#account-form'),
+	accountCurrentPassword: document.querySelector('#account-current-password'),
+	accountNewPassword: document.querySelector('#account-new-password'),
+	adminModal: document.querySelector('#admin-modal'),
+	adminCancel: document.querySelector('#admin-cancel'),
+	adminCreateUserForm: document.querySelector('#admin-create-user-form'),
+	adminCreateUsername: document.querySelector('#admin-create-username'),
+	adminCreateRole: document.querySelector('#admin-create-role'),
+	adminCreatePassword: document.querySelector('#admin-create-password'),
+	adminCreateGeneratePassword: document.querySelector('#admin-create-generate-password'),
+	adminGeneratedPassword: document.querySelector('#admin-generated-password'),
+	adminUsersBody: document.querySelector('#admin-users-body')
 };
 
 const appState = {
@@ -79,7 +98,8 @@ const appState = {
 		authenticated: false,
 		user: null,
 		storageContext: 'shared'
-	}
+	},
+	adminUsers: []
 };
 
 const DEFAULT_VIEWER_TITLE = 'No document opened yet';
@@ -1017,13 +1037,28 @@ async function refreshAuthState() {
 	renderAuthControls();
 }
 
-async function loginWithPrompt() {
-	const username = window.prompt('Username');
-	if (!username) {
-		return;
-	}
-	const password = window.prompt('Password');
-	if (!password) {
+function openModal(modalElement) {
+	modalElement.classList.remove('hidden');
+	modalElement.setAttribute('aria-hidden', 'false');
+}
+
+function closeModal(modalElement) {
+	modalElement.classList.add('hidden');
+	modalElement.setAttribute('aria-hidden', 'true');
+}
+
+function openLoginModal() {
+	elements.loginForm.reset();
+	openModal(elements.loginModal);
+	elements.loginUsername.focus();
+}
+
+async function submitLoginForm(event) {
+	event.preventDefault();
+	const username = elements.loginUsername.value.trim();
+	const password = elements.loginPassword.value;
+	if (!username || !password) {
+		setStatus('Username and password are required.', true);
 		return;
 	}
 	await requestJson('/api/auth/login', {
@@ -1031,8 +1066,10 @@ async function loginWithPrompt() {
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ username: username, password: password })
 	});
+	closeModal(elements.loginModal);
 	await loadPage();
 	if (appState.auth?.user?.must_change_password) {
+		openAccountModal();
 		setStatus('Please change your password now.', true);
 	}
 }
@@ -1052,13 +1089,18 @@ async function switchStorageContext(context) {
 	await loadPage();
 }
 
-async function changeOwnPassword() {
-	const currentPassword = window.prompt('Current password');
-	if (!currentPassword) {
-		return;
-	}
-	const newPassword = window.prompt('New password (min 12 chars)');
-	if (!newPassword) {
+function openAccountModal() {
+	elements.accountForm.reset();
+	openModal(elements.accountModal);
+	elements.accountCurrentPassword.focus();
+}
+
+async function submitAccountForm(event) {
+	event.preventDefault();
+	const currentPassword = elements.accountCurrentPassword.value;
+	const newPassword = elements.accountNewPassword.value;
+	if (!currentPassword || !newPassword) {
+		setStatus('Current and new password are required.', true);
 		return;
 	}
 	await requestJson('/api/auth/change-password', {
@@ -1069,97 +1111,142 @@ async function changeOwnPassword() {
 			newPassword: newPassword
 		})
 	});
+	closeModal(elements.accountModal);
 	setStatus('Password updated.');
 	await refreshAuthState();
 }
 
+function renderAdminUsers() {
+	elements.adminUsersBody.innerHTML = '';
+	if (appState.adminUsers.length === 0) {
+		const row = document.createElement('tr');
+		const cell = document.createElement('td');
+		cell.colSpan = 5;
+		cell.textContent = 'No users found.';
+		row.appendChild(cell);
+		elements.adminUsersBody.appendChild(row);
+		return;
+	}
+
+	for (const user of appState.adminUsers) {
+		const row = document.createElement('tr');
+		const usernameCell = document.createElement('td');
+		usernameCell.textContent = user.username;
+		const roleCell = document.createElement('td');
+		roleCell.textContent = user.role;
+		const statusCell = document.createElement('td');
+		statusCell.textContent = user.active ? 'active' : 'disabled';
+		const createdCell = document.createElement('td');
+		createdCell.textContent = formatDate(user.created_at);
+		const actionsCell = document.createElement('td');
+		const actionContainer = document.createElement('div');
+		actionContainer.className = 'admin-user-actions';
+
+		const toggleButton = document.createElement('button');
+		toggleButton.type = 'button';
+		toggleButton.className = 'secondary';
+		toggleButton.textContent = user.active ? 'Disable' : 'Enable';
+		toggleButton.addEventListener('click', async function() {
+			try {
+				await requestJson(`/api/admin/users/${encodeURIComponent(user.id)}`, {
+					method: 'PATCH',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ active: !user.active })
+				});
+				await loadAdminUsers();
+			} catch (error) {
+				setStatus(error.message, true);
+			}
+		});
+
+		const resetButton = document.createElement('button');
+		resetButton.type = 'button';
+		resetButton.className = 'secondary';
+		resetButton.textContent = 'Reset password';
+		resetButton.addEventListener('click', async function() {
+			try {
+				const payload = await requestJson(`/api/admin/users/${encodeURIComponent(user.id)}/reset-password`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ generatePassword: true })
+				});
+				const generated = payload.generatedPassword ? `New password (show once): ${payload.generatedPassword}` : 'Password reset.';
+				elements.adminGeneratedPassword.textContent = generated;
+				elements.adminGeneratedPassword.classList.remove('hidden');
+			} catch (error) {
+				setStatus(error.message, true);
+			}
+		});
+
+		const deleteButton = document.createElement('button');
+		deleteButton.type = 'button';
+		deleteButton.className = 'danger';
+		deleteButton.textContent = 'Delete';
+		deleteButton.disabled = appState.auth?.user?.id === user.id;
+		deleteButton.addEventListener('click', async function() {
+			try {
+				await requestJson(`/api/admin/users/${encodeURIComponent(user.id)}`, { method: 'DELETE' });
+				await loadAdminUsers();
+			} catch (error) {
+				setStatus(error.message, true);
+			}
+		});
+
+		actionContainer.append(toggleButton, resetButton, deleteButton);
+		actionsCell.appendChild(actionContainer);
+		row.append(usernameCell, roleCell, statusCell, createdCell, actionsCell);
+		elements.adminUsersBody.appendChild(row);
+	}
+}
+
+async function loadAdminUsers() {
+	const payload = await requestJson('/api/admin/users');
+	appState.adminUsers = payload.users || [];
+	renderAdminUsers();
+}
+
 async function openAdminUserManagement() {
-	const action = String(window.prompt('Admin action: list | create | reset | toggle | delete') || '').trim().toLowerCase();
-	if (!action) {
-		return;
-	}
+	elements.adminGeneratedPassword.textContent = '';
+	elements.adminGeneratedPassword.classList.add('hidden');
+	elements.adminCreateUserForm.reset();
+	elements.adminCreateGeneratePassword.checked = true;
+	elements.adminCreatePassword.disabled = true;
+	await loadAdminUsers();
+	openModal(elements.adminModal);
+}
 
-	if (action === 'list') {
-		const payload = await requestJson('/api/admin/users');
-		const labels = payload.users.map((entry) => `${entry.id} | ${entry.username} | ${entry.role} | ${entry.active ? 'active' : 'disabled'}`);
-		window.alert(labels.length ? labels.join('\n') : 'No users.');
+async function submitAdminCreateUserForm(event) {
+	event.preventDefault();
+	const username = elements.adminCreateUsername.value.trim();
+	const role = elements.adminCreateRole.value === 'admin' ? 'admin' : 'user';
+	const generate = elements.adminCreateGeneratePassword.checked;
+	const password = elements.adminCreatePassword.value;
+	if (!username) {
+		setStatus('Username is required.', true);
 		return;
 	}
-
-	if (action === 'create') {
-		const username = String(window.prompt('Username') || '').trim();
-		if (!username) {
-			return;
-		}
-		const role = String(window.prompt('Role (user/admin)', 'user') || 'user').trim().toLowerCase() === 'admin' ? 'admin' : 'user';
-		const generate = window.confirm('Generate initial password automatically?');
-		const password = generate ? null : window.prompt('Initial password (min 12 chars)');
-		const payload = await requestJson('/api/admin/users', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				username: username,
-				role: role,
-				generatePassword: generate,
-				password: password || undefined
-			})
-		});
-		window.alert(payload.generatedPassword
-			? `User created. Initial password (show once): ${payload.generatedPassword}`
-			: 'User created.');
+	if (!generate && !password) {
+		setStatus('Password is required if generation is disabled.', true);
 		return;
 	}
-
-	if (action === 'reset') {
-		const userId = String(window.prompt('User ID for password reset') || '').trim();
-		if (!userId) {
-			return;
-		}
-		const generate = window.confirm('Generate new password automatically?');
-		const password = generate ? null : window.prompt('New password (min 12 chars)');
-		const payload = await requestJson(`/api/admin/users/${encodeURIComponent(userId)}/reset-password`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				generatePassword: generate,
-				password: password || undefined
-			})
-		});
-		window.alert(payload.generatedPassword
-			? `Password reset. New password (show once): ${payload.generatedPassword}`
-			: 'Password reset.');
-		return;
-	}
-
-	if (action === 'toggle') {
-		const userId = String(window.prompt('User ID to enable/disable') || '').trim();
-		if (!userId) {
-			return;
-		}
-		const active = window.confirm('Enable user? Click Cancel to disable.');
-		await requestJson(`/api/admin/users/${encodeURIComponent(userId)}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ active: active })
-		});
-		window.alert('User status updated.');
-		return;
-	}
-
-	if (action === 'delete') {
-		const userId = String(window.prompt('User ID to delete') || '').trim();
-		if (!userId) {
-			return;
-		}
-		if (!window.confirm('Delete this user permanently?')) {
-			return;
-		}
-		await requestJson(`/api/admin/users/${encodeURIComponent(userId)}`, {
-			method: 'DELETE'
-		});
-		window.alert('User deleted.');
-		return;
-	}
+	const payload = await requestJson('/api/admin/users', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			username: username,
+			role: role,
+			generatePassword: generate,
+			password: generate ? undefined : password
+		})
+	});
+	elements.adminGeneratedPassword.textContent = payload.generatedPassword
+		? `Initial password (show once): ${payload.generatedPassword}`
+		: 'User created.';
+	elements.adminGeneratedPassword.classList.remove('hidden');
+	elements.adminCreateUserForm.reset();
+	elements.adminCreateGeneratePassword.checked = true;
+	elements.adminCreatePassword.disabled = true;
+	await loadAdminUsers();
 }
 
 function applySearchFilter() {
@@ -2227,9 +2314,7 @@ window.addEventListener('resize', syncViewerLayout);
 
 elements.refreshButton.addEventListener('click', loadPage);
 elements.loginButton.addEventListener('click', function() {
-	loginWithPrompt().catch(function(error) {
-		setStatus(error.message, true);
-	});
+	openLoginModal();
 });
 elements.logoutButton.addEventListener('click', function() {
 	logoutCurrentUser().catch(function(error) {
@@ -2247,9 +2332,7 @@ elements.sharedFilesButton.addEventListener('click', function() {
 	});
 });
 elements.accountButton.addEventListener('click', function() {
-	changeOwnPassword().catch(function(error) {
-		setStatus(error.message, true);
-	});
+	openAccountModal();
 });
 elements.adminButton.addEventListener('click', function() {
 	openAdminUserManagement().catch(function(error) {
@@ -2332,6 +2415,51 @@ elements.uploadModal.addEventListener('click', function(event) {
 if (event.target === elements.uploadModal) {
 	closeUploadDialog();
 }
+});
+elements.loginCancel.addEventListener('click', function() {
+	closeModal(elements.loginModal);
+});
+elements.loginForm.addEventListener('submit', function(event) {
+	submitLoginForm(event).catch(function(error) {
+		setStatus(error.message, true);
+	});
+});
+elements.loginModal.addEventListener('click', function(event) {
+	if (event.target === elements.loginModal) {
+		closeModal(elements.loginModal);
+	}
+});
+elements.accountCancel.addEventListener('click', function() {
+	closeModal(elements.accountModal);
+});
+elements.accountForm.addEventListener('submit', function(event) {
+	submitAccountForm(event).catch(function(error) {
+		setStatus(error.message, true);
+	});
+});
+elements.accountModal.addEventListener('click', function(event) {
+	if (event.target === elements.accountModal) {
+		closeModal(elements.accountModal);
+	}
+});
+elements.adminCancel.addEventListener('click', function() {
+	closeModal(elements.adminModal);
+});
+elements.adminModal.addEventListener('click', function(event) {
+	if (event.target === elements.adminModal) {
+		closeModal(elements.adminModal);
+	}
+});
+elements.adminCreateGeneratePassword.addEventListener('change', function(event) {
+	elements.adminCreatePassword.disabled = event.target.checked;
+	if (event.target.checked) {
+		elements.adminCreatePassword.value = '';
+	}
+});
+elements.adminCreateUserForm.addEventListener('submit', function(event) {
+	submitAdminCreateUserForm(event).catch(function(error) {
+		setStatus(error.message, true);
+	});
 });
 document.addEventListener('click', function(event) {
 if (!event.target.closest('.context-menu') && !event.target.closest('.menu-button')) {

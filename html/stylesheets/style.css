@@ -663,6 +663,67 @@ tbody tr.selected-row {
   width: min(38rem, 100%);
 }
 
+.admin-modal-card {
+  width: min(56rem, 100%);
+}
+
+.admin-section {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-section h4 {
+  margin: 0;
+}
+
+.checkbox-field span {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 0.9rem;
+}
+
+.admin-generated-password {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+  word-break: break-all;
+}
+
+.admin-users-table-wrapper {
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  overflow: auto;
+}
+
+.admin-users-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin-users-table th,
+.admin-users-table td {
+  padding: 0.6rem 0.7rem;
+  border-bottom: 1px solid var(--border-soft);
+  vertical-align: top;
+}
+
+.admin-users-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.admin-user-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.admin-user-actions button {
+  padding: 0.35rem 0.5rem;
+  border-radius: 7px;
+}
+
 .upload-dropzone {
   display: grid;
   justify-items: center;

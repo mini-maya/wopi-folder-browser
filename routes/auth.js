@@ -4,11 +4,12 @@ const express = require('express');
 
 const config = require('../lib/config');
 const { createHttpError } = require('../lib/errors');
-const { loadInstallState, markInstallCompleted } = require('../lib/installStore');
+const { createInitialAdmin } = require('../lib/initialAdminSetup');
+const { loadInstallState } = require('../lib/installStore');
 const { generatePassword, hashPassword, verifyPassword } = require('../lib/passwords');
 const { destroySession, regenerateSession, requireAuth } = require('../lib/sessionAuth');
 const { assertStorageContextForUser, ensureUserStorageRoot } = require('../lib/storageContext');
-const { createUser, getUserByUsername, hasAdminUser, setUserPassword, toPublicUser } = require('../lib/userStore');
+const { getUserByUsername, hasAdminUser, setUserPassword, toPublicUser } = require('../lib/userStore');
 
 const router = express.Router();
 
@@ -50,33 +51,12 @@ router.get('/setup-status', async function(req, res, next) {
 
 router.post('/setup-initial-admin', async function(req, res, next) {
 	try {
-		const [state, adminExists] = await Promise.all([
-			loadInstallState(config.documentRoot),
-			hasAdminUser(config.documentRoot)
-		]);
-		if (state.completed || adminExists) {
-			throw createHttpError(409, 'Initial setup has already been completed.');
-		}
-
-		const username = String(req.body.username || '').trim();
-		const password = String(req.body.password || '');
-		if (!username || !password) {
-			throw createHttpError(400, 'Username and password are required.');
-		}
-
-		const passwordHash = await hashPassword(password);
-		const user = await createUser(config.documentRoot, {
-			username: username,
-			password: password,
-			passwordHash: passwordHash,
-			role: 'admin',
-			active: true,
-			mustChangePassword: false
+		const user = await createInitialAdmin(config, {
+			username: req.body.username,
+			password: req.body.password
 		});
-		await ensureUserStorageRoot(config, user.id);
-		await markInstallCompleted(config.documentRoot);
 		res.status(201).json({
-			user: toPublicUser(user)
+			user: user
 		});
 	} catch (error) {
 		next(error);
