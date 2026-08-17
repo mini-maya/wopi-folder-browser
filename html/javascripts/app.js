@@ -1498,28 +1498,41 @@ async function moveDocument(fileId, targetNameOverride, targetDirectoryOverride)
 				return;
 			}
 			const isDirectoryConflict = error?.payload?.conflictType === 'directory';
-			if (isDirectoryConflict) {
-				appState.integrationPendingData = { conflictResolution: resolution };
-			} else {
-				const isIntegrating = appState.integrationPendingData?.conflictResolution === 'integrate';
-				if (isIntegrating) {
-					if (appState.applyConflictToAll) {
-						appState.integrationPendingData.fileConflictResolution = resolution;
-						delete appState.integrationPendingData.fileConflictResolutions;
-					} else {
-						const conflictPath = error?.payload?.target?.relativePath;
-						if (conflictPath) {
-							if (!appState.integrationPendingData.fileConflictResolutions) {
-								appState.integrationPendingData.fileConflictResolutions = {};
-							}
-							appState.integrationPendingData.fileConflictResolutions[conflictPath] = resolution;
-						} else {
-							appState.integrationPendingData.fileConflictResolution = resolution;
-						}
-					}
+			const isIntegrating = appState.integrationPendingData?.conflictResolution === 'integrate';
+			if (isDirectoryConflict && isIntegrating) {
+				if (appState.applyConflictToAll) {
+					appState.integrationPendingData.directoryConflictResolution = resolution;
+					delete appState.integrationPendingData.directoryConflictResolutions;
 				} else {
-					appState.integrationPendingData = { conflictResolution: resolution };
+					const conflictPath = error?.payload?.target?.relativePath;
+					if (conflictPath) {
+						if (!appState.integrationPendingData.directoryConflictResolutions) {
+							appState.integrationPendingData.directoryConflictResolutions = {};
+						}
+						appState.integrationPendingData.directoryConflictResolutions[conflictPath] = resolution;
+					} else {
+						appState.integrationPendingData.directoryConflictResolution = resolution;
+					}
 				}
+			} else if (isDirectoryConflict) {
+				appState.integrationPendingData = { conflictResolution: resolution };
+			} else if (isIntegrating) {
+				if (appState.applyConflictToAll) {
+					appState.integrationPendingData.fileConflictResolution = resolution;
+					delete appState.integrationPendingData.fileConflictResolutions;
+				} else {
+					const conflictPath = error?.payload?.target?.relativePath;
+					if (conflictPath) {
+						if (!appState.integrationPendingData.fileConflictResolutions) {
+							appState.integrationPendingData.fileConflictResolutions = {};
+						}
+						appState.integrationPendingData.fileConflictResolutions[conflictPath] = resolution;
+					} else {
+						appState.integrationPendingData.fileConflictResolution = resolution;
+					}
+				}
+			} else {
+				appState.integrationPendingData = { conflictResolution: resolution };
 			}
 			await moveDocument(fileId, targetNameOverride, targetDirectoryOverride);
 			return;
@@ -1554,28 +1567,41 @@ async function copyDocument(fileId, targetNameOverride, targetDirectoryOverride)
 				return;
 			}
 			const isDirectoryConflict = error?.payload?.conflictType === 'directory';
-			if (isDirectoryConflict) {
-				appState.integrationPendingData = { conflictResolution: resolution };
-			} else {
-				const isIntegrating = appState.integrationPendingData?.conflictResolution === 'integrate';
-				if (isIntegrating) {
-					if (appState.applyConflictToAll) {
-						appState.integrationPendingData.fileConflictResolution = resolution;
-						delete appState.integrationPendingData.fileConflictResolutions;
-					} else {
-						const conflictPath = error?.payload?.target?.relativePath;
-						if (conflictPath) {
-							if (!appState.integrationPendingData.fileConflictResolutions) {
-								appState.integrationPendingData.fileConflictResolutions = {};
-							}
-							appState.integrationPendingData.fileConflictResolutions[conflictPath] = resolution;
-						} else {
-							appState.integrationPendingData.fileConflictResolution = resolution;
-						}
-					}
+			const isIntegrating = appState.integrationPendingData?.conflictResolution === 'integrate';
+			if (isDirectoryConflict && isIntegrating) {
+				if (appState.applyConflictToAll) {
+					appState.integrationPendingData.directoryConflictResolution = resolution;
+					delete appState.integrationPendingData.directoryConflictResolutions;
 				} else {
-					appState.integrationPendingData = { conflictResolution: resolution };
+					const conflictPath = error?.payload?.target?.relativePath;
+					if (conflictPath) {
+						if (!appState.integrationPendingData.directoryConflictResolutions) {
+							appState.integrationPendingData.directoryConflictResolutions = {};
+						}
+						appState.integrationPendingData.directoryConflictResolutions[conflictPath] = resolution;
+					} else {
+						appState.integrationPendingData.directoryConflictResolution = resolution;
+					}
 				}
+			} else if (isDirectoryConflict) {
+				appState.integrationPendingData = { conflictResolution: resolution };
+			} else if (isIntegrating) {
+				if (appState.applyConflictToAll) {
+					appState.integrationPendingData.fileConflictResolution = resolution;
+					delete appState.integrationPendingData.fileConflictResolutions;
+				} else {
+					const conflictPath = error?.payload?.target?.relativePath;
+					if (conflictPath) {
+						if (!appState.integrationPendingData.fileConflictResolutions) {
+							appState.integrationPendingData.fileConflictResolutions = {};
+						}
+						appState.integrationPendingData.fileConflictResolutions[conflictPath] = resolution;
+					} else {
+						appState.integrationPendingData.fileConflictResolution = resolution;
+					}
+				}
+			} else {
+				appState.integrationPendingData = { conflictResolution: resolution };
 			}
 			await copyDocument(fileId, targetNameOverride, targetDirectoryOverride);
 			return;

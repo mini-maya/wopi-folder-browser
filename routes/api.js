@@ -414,6 +414,8 @@ router.post('/files/:fileId/move', async function(req, res, next) {
 			targetDirectory: req.body.targetDirectory,
 			targetName: req.body.targetName,
 			conflictResolution: req.body.conflictResolution,
+			directoryConflictResolution: req.body.directoryConflictResolution,
+			directoryConflictResolutions: req.body.directoryConflictResolutions,
 			fileConflictResolution: req.body.fileConflictResolution,
 			fileConflictResolutions: req.body.fileConflictResolutions,
 			operation: 'move'
@@ -448,6 +450,8 @@ router.post('/files/:fileId/copy', async function(req, res, next) {
 			targetDirectory: req.body.targetDirectory,
 			targetName: req.body.targetName,
 			conflictResolution: req.body.conflictResolution,
+			directoryConflictResolution: req.body.directoryConflictResolution,
+			directoryConflictResolutions: req.body.directoryConflictResolutions,
 			fileConflictResolution: req.body.fileConflictResolution,
 			fileConflictResolutions: req.body.fileConflictResolutions,
 			operation: 'copy'
