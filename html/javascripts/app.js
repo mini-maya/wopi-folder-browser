@@ -676,7 +676,6 @@ function renderDetailsPanel(document) {
 		? `
 				<button type="button" class="secondary" data-action="details-move" data-file-id="${document.id}">Move</button>
 				<button type="button" class="secondary" data-action="details-copy" data-file-id="${document.id}">Copy</button>
-				<button type="button" class="secondary" data-action="details-rename" data-file-id="${document.id}">Rename</button>
 				<button type="button" class="danger" data-action="details-delete" data-file-id="${document.id}">Delete</button>
 			`
 		: `
@@ -684,7 +683,6 @@ function renderDetailsPanel(document) {
 				<button type="button" class="secondary" data-action="details-open" data-file-id="${document.id}">Open</button>
 				<button type="button" class="secondary" data-action="details-save-as" data-file-id="${document.id}">Save as...</button>
 				<button type="button" class="secondary" data-action="details-share" data-file-id="${document.id}">Share</button>
-				<button type="button" class="secondary" data-action="details-rename" data-file-id="${document.id}">Rename</button>
 				<button type="button" class="secondary" data-action="details-move" data-file-id="${document.id}">Move</button>
 				<button type="button" class="secondary" data-action="details-copy" data-file-id="${document.id}">Copy</button>
 				<button type="button" class="secondary" data-action="details-download" data-file-id="${document.id}">Download</button>
@@ -844,11 +842,6 @@ async function handleDetailsAction(action, fileId) {
 				return;
 			}
 			await createShare(fileId);
-			return;
-		case 'details-rename':
-			await renameDocument(fileId);
-			await loadPage();
-			openDetailsPanel(fileId);
 			return;
 		case 'details-move':
 			await openFolderTargetDialog('move', fileId);
@@ -1479,50 +1472,6 @@ async function createFolderInDirectory(directory) {
 	});
 }
 
-async function renameDocument(fileId, nextNameOverride) {
-	const document = getDocumentById(fileId);
-	if (!document) {
-		setStatus('The entry could not be found.', true);
-		return;
-	}
-	if (!nextNameOverride) {
-		openNameEntryDialog({
-			action: 'rename',
-			title: isFolderEntry(document) ? 'Rename folder' : 'Rename file',
-			buttonText: 'Rename',
-			defaultValue: document.name,
-			fileId,
-			directory: ''
-		});
-		return;
-	}
-	try {
-		await requestJson(`/api/files/${encodeURIComponent(fileId)}/move`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ targetName: nextNameOverride })
-		});
-		await loadPage();
-		setStatus('Renamed successfully.');
-	} catch (error) {
-		if (error?.payload?.error === 'FILE_CONFLICT') {
-			const resolution = await showConflictDialog(error.payload, 'Rename');
-			if (!resolution) {
-				return;
-			}
-			await requestJson(`/api/files/${encodeURIComponent(fileId)}/move`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ targetName: nextNameOverride, conflictResolution: resolution })
-			});
-			await loadPage();
-			setStatus('Renamed successfully.');
-			return;
-		}
-		throw error;
-	}
-}
-
 async function moveDocument(fileId, targetNameOverride, targetDirectoryOverride) {
 	if (!targetNameOverride) {
 		setStatus('A target name is required for this move operation.', true);
@@ -1850,17 +1799,6 @@ async function submitFolderTargetDialog(event) {
 			await loadPage();
 			closeFolderTargetDialog();
 			setStatus('Folder created.');
-			return;
-		}
-		case 'rename': {
-			const fileId = appState.folderPickerSelectionIds[0];
-			if (!fileId) {
-				return;
-			}
-			await renameDocument(fileId, targetName);
-			await loadPage();
-			closeFolderTargetDialog();
-			setStatus('Entry renamed.');
 			return;
 		}
 		case 'version-rename': {
@@ -2385,7 +2323,6 @@ async function showContextMenu(fileId, button) {
 			<button type="button" data-context-action="new-microsoft-presentation" data-file-id="${documentEntry.id}">New Microsoft PowerPoint presentation</button>
 		</div>` : ''}
 		<button type="button" data-context-action="download" data-file-id="${documentEntry.id}">Download</button>
-		<button type="button" data-context-action="rename" data-file-id="${documentEntry.id}">Rename</button>
 		<button type="button" data-context-action="move" data-file-id="${documentEntry.id}">Move to...</button>
 		<button type="button" data-context-action="copy" data-file-id="${documentEntry.id}">Copy to...</button>
 		${isFolder ? '' : `<button type="button" data-context-action="save-as" data-file-id="${documentEntry.id}">Save as...</button>`}
@@ -2486,9 +2423,6 @@ async function handleContextMenuAction(action, fileId) {
 		case 'new-folder':
 			await createFolderInDirectory(documentEntry?.relativePath || '');
 			return;
-		case 'rename':
-			await renameDocument(fileId);
-			return;
 		case 'move':
 			await openFolderTargetDialog('move', fileId);
 			return;
@@ -2522,9 +2456,6 @@ async function handleFileAction(action, fileId, mode) {
 			case 'download':
 				window.location.href = `/api/files/${encodeURIComponent(fileId)}/download`;
 				return;
-			case 'rename':
-				await renameDocument(fileId);
-				break;
 			case 'copy':
 				await openFolderTargetDialog('copy', fileId);
 				break;
