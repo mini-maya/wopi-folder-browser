@@ -958,6 +958,149 @@ tbody tr.selected-row {
   display: none;
 }
 
+/* ── Detail Panel Tabs ─────────────────────────────────────── */
+
+.detail-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border-default);
+  margin-bottom: 0;
+}
+
+.detail-tab-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.65rem 0.5rem 0.55rem;
+  background: transparent;
+  color: var(--muted-text);
+  border-radius: 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.detail-tab-btn svg {
+  flex-shrink: 0;
+}
+
+.detail-tab-btn:hover {
+  background: transparent;
+  color: var(--text-main);
+}
+
+.detail-tab-btn.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  background: transparent;
+}
+
+.detail-tab-content {
+  padding-top: 0.75rem;
+}
+
+/* ── Share Tab ─────────────────────────────────────────────── */
+
+.tab-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.tab-section-description {
+  margin: 0;
+  color: var(--muted-text);
+  font-size: 0.85rem;
+}
+
+.share-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  align-self: flex-start;
+}
+
+/* ── Activity Tab ──────────────────────────────────────────── */
+
+.tab-loading,
+.tab-empty {
+  color: var(--muted-text);
+  font-size: 0.85rem;
+  padding: 0.5rem 0;
+}
+
+.tab-error {
+  color: var(--status-error-text);
+}
+
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+
+.activity-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.activity-item:last-child {
+  border-bottom: none;
+}
+
+.activity-item-dot {
+  flex-shrink: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--primary);
+  margin-top: 0.3rem;
+}
+
+.activity-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.activity-item-action {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.activity-count {
+  font-weight: 400;
+  color: var(--muted-text);
+}
+
+.activity-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted-text);
+}
+
+.activity-item-user {
+  font-weight: 500;
+  color: var(--subtle-text);
+}
+
 body.editor-fullscreen,
 body.share-session {
   background: var(--panel-bg);

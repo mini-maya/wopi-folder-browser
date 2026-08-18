@@ -103,7 +103,9 @@ const appState = {
 	},
 	adminUsers: [],
 	applyConflictToAll: false,
-	integrationPendingData: null
+	integrationPendingData: null,
+	activeDetailTab: 'share',
+	activeDetailFileId: null
 };
 
 const DEFAULT_VIEWER_TITLE = 'No document opened yet';
@@ -658,6 +660,10 @@ function openDetailsPanel(fileId) {
 	if (!document) {
 		return;
 	}
+	if (appState.activeDetailFileId !== fileId) {
+		appState.activeDetailTab = 'share';
+		appState.activeDetailFileId = fileId;
+	}
 	elements.detailsPanel.classList.remove('hidden');
 	renderDetailsPanel(document);
 }
@@ -671,23 +677,14 @@ function renderDetailsPanel(document) {
 	const folderSizeBytes = isFolder ? getFolderSizeBytes(document, appState.documents) : document.size;
 	const previewClass = isFolder ? 'folder-icon' : '';
 	const favoriteLabel = document.favorite ? '★ Favorite' : '☆ Favorite';
-	const actionButtons = isFolder
-		? `
+
+	if (isFolder) {
+		const folderActionButtons = `
 				<button type="button" class="secondary" data-action="details-move" data-file-id="${document.id}">Move</button>
 				<button type="button" class="secondary" data-action="details-copy" data-file-id="${document.id}">Copy</button>
-				<button type="button" class="danger" data-action="details-delete" data-file-id="${document.id}">Delete</button>
-			`
-		: `
-				<button type="button" data-action="details-view" data-file-id="${document.id}">View</button>
-				<button type="button" class="secondary" data-action="details-open" data-file-id="${document.id}">Open</button>
-				<button type="button" class="secondary" data-action="details-save-as" data-file-id="${document.id}">Save as...</button>
-				<button type="button" class="secondary" data-action="details-share" data-file-id="${document.id}">Share</button>
-				<button type="button" class="secondary" data-action="details-move" data-file-id="${document.id}">Move</button>
-				<button type="button" class="secondary" data-action="details-copy" data-file-id="${document.id}">Copy</button>
-				<button type="button" class="secondary" data-action="details-download" data-file-id="${document.id}">Download</button>
 				<button type="button" class="danger" data-action="details-delete" data-file-id="${document.id}">Delete</button>
 			`;
-	elements.detailsPanelContent.innerHTML = `
+		elements.detailsPanelContent.innerHTML = `
 		<div class="details-card">
 			<div class="details-preview">
 				<img class="${previewClass}" src="${getPreviewImage(document)}" alt="${escapeHtml(document.name)} preview">
@@ -699,20 +696,51 @@ function renderDetailsPanel(document) {
 			<div class="detail-meta">
 				<div class="detail-meta-row"><span>Size</span><strong>${formatBytes(folderSizeBytes)}</strong></div>
 				<div class="detail-meta-row"><span>Modified</span><strong>${formatDate(document.updatedAt)}</strong></div>
-				<div class="detail-meta-row"><span>Author</span><strong>shared-user</strong></div>
-				<div class="detail-meta-row"><span>Type</span><strong>${isFolder ? 'Folder' : 'File'}</strong></div>
+				<div class="detail-meta-row"><span>Type</span><strong>Folder</strong></div>
 				<div class="detail-meta-row"><span>Path</span><strong>${escapeHtml(document.relativePath)}</strong></div>
 			</div>
 			<div class="details-actions">
-				${actionButtons}
+				${folderActionButtons}
 			</div>
-			${!isFolder ? `
-			<div class="details-actions">
-				<button type="button" class="secondary" data-action="details-versions" data-file-id="${document.id}">View versions</button>
-			</div>
-			` : ''}
 		</div>
 	`;
+	} else {
+		const activeTab = appState.activeDetailTab || 'share';
+		elements.detailsPanelContent.innerHTML = `
+		<div class="details-card">
+			<div class="details-preview">
+				<img class="${previewClass}" src="${getPreviewImage(document)}" alt="${escapeHtml(document.name)} preview">
+			</div>
+			<div class="details-header">
+				<h3>${escapeHtml(document.name)}</h3>
+				<button type="button" class="secondary" data-action="details-toggle-favorite" data-file-id="${document.id}">${favoriteLabel}</button>
+			</div>
+			<div class="detail-meta">
+				<div class="detail-meta-row"><span>Size</span><strong>${formatBytes(folderSizeBytes)}</strong></div>
+				<div class="detail-meta-row"><span>Modified</span><strong>${formatDate(document.updatedAt)}</strong></div>
+				<div class="detail-meta-row"><span>Type</span><strong>File</strong></div>
+				<div class="detail-meta-row"><span>Path</span><strong>${escapeHtml(document.relativePath)}</strong></div>
+			</div>
+			<nav class="detail-tabs" aria-label="File detail tabs">
+				<button type="button" class="detail-tab-btn${activeTab === 'share' ? ' active' : ''}" data-tab="share" aria-selected="${activeTab === 'share'}">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+					<span>Share</span>
+				</button>
+				<button type="button" class="detail-tab-btn${activeTab === 'activities' ? ' active' : ''}" data-tab="activities" aria-selected="${activeTab === 'activities'}">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+					<span>Activities</span>
+				</button>
+				<button type="button" class="detail-tab-btn${activeTab === 'versions' ? ' active' : ''}" data-tab="versions" aria-selected="${activeTab === 'versions'}">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+					<span>Versions</span>
+				</button>
+			</nav>
+			<div class="detail-tab-content" id="detail-tab-content"></div>
+		</div>
+	`;
+		attachDetailTabListeners(document.id);
+		switchDetailTab(document.id, activeTab);
+	}
 
 	for (const button of elements.detailsPanelContent.querySelectorAll('[data-action][data-file-id]')) {
 		button.addEventListener('click', function() {
@@ -721,96 +749,197 @@ function renderDetailsPanel(document) {
 	}
 }
 
-async function renderVersionList(fileId) {
+function attachDetailTabListeners(fileId) {
+	const tabButtons = elements.detailsPanelContent.querySelectorAll('.detail-tab-btn');
+	for (const btn of tabButtons) {
+		btn.addEventListener('click', function() {
+			const tab = btn.dataset.tab;
+			appState.activeDetailTab = tab;
+			for (const b of tabButtons) {
+				b.classList.toggle('active', b.dataset.tab === tab);
+				b.setAttribute('aria-selected', b.dataset.tab === tab ? 'true' : 'false');
+			}
+			switchDetailTab(fileId, tab);
+		});
+	}
+}
+
+function switchDetailTab(fileId, tab) {
+	const container = elements.detailsPanelContent.querySelector('#detail-tab-content');
+	if (!container) {
+		return;
+	}
+	container.innerHTML = '';
+	if (tab === 'share') {
+		renderShareTabContent(fileId, container);
+	} else if (tab === 'activities') {
+		renderActivityTabContent(fileId, container);
+	} else if (tab === 'versions') {
+		renderVersionsTabContent(fileId, container);
+	}
+}
+
+function renderShareTabContent(fileId, container) {
+	container.innerHTML = `
+		<div class="tab-section">
+			<p class="tab-section-description">Share this file with others by creating a link.</p>
+			<button type="button" class="share-tab-btn" data-share-file-id="${fileId}">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+				Create share link
+			</button>
+		</div>
+	`;
+	const shareBtn = container.querySelector('.share-tab-btn');
+	shareBtn.addEventListener('click', async function() {
+		await createShare(fileId);
+	});
+}
+
+async function renderActivityTabContent(fileId, container) {
+	container.innerHTML = '<div class="tab-loading">Loading activities…</div>';
+	try {
+		const payload = await requestJson('/api/activities?limit=200');
+		const allActivities = Array.isArray(payload.activities) ? payload.activities : [];
+		const activities = allActivities.filter((a) => a.fileId === fileId);
+
+		const activityLabels = {
+			open: 'Opened',
+			edit: 'Edited',
+			create: 'Created',
+			share: 'Shared',
+			move: 'Moved',
+			copy: 'Copied',
+			rename: 'Renamed',
+			download: 'Downloaded',
+			upload: 'Uploaded',
+			'restore-version': 'Restored version',
+			'delete-version': 'Deleted version',
+			delete: 'Deleted'
+		};
+
+		if (!activities.length) {
+			container.innerHTML = '<div class="tab-empty">No activity recorded yet.</div>';
+			return;
+		}
+
+		container.innerHTML = `
+			<ul class="activity-list" aria-label="File activity">
+				${activities.map(function(a) {
+					const label = activityLabels[a.type] || a.type;
+					const countNote = a.count && a.count > 1 ? ` <span class="activity-count">×${a.count}</span>` : '';
+					return `
+						<li class="activity-item">
+							<div class="activity-item-dot" aria-hidden="true"></div>
+							<div class="activity-item-body">
+								<span class="activity-item-action">${escapeHtml(label)}${countNote}</span>
+								<span class="activity-item-meta">
+									<span class="activity-item-user">${escapeHtml(a.userName || a.userId || 'Unknown')}</span>
+									<span class="activity-item-time">${formatDate(a.createdAt)}</span>
+								</span>
+							</div>
+						</li>
+					`;
+				}).join('')}
+			</ul>
+		`;
+	} catch (error) {
+		container.innerHTML = `<div class="tab-empty tab-error">Could not load activities: ${escapeHtml(error.message)}</div>`;
+	}
+}
+
+async function renderVersionsTabContent(fileId, container) {
+	container.innerHTML = '<div class="tab-loading">Loading versions…</div>';
 	try {
 		const payload = await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions`);
 		const fileEntry = getDocumentById(fileId);
 		const versions = Array.isArray(payload.versions) ? payload.versions : [];
-		elements.detailsPanelContent.innerHTML = `
-			<div class="details-card">
-				<div class="details-header">
-					<h3>Versions</h3>
-					<button type="button" class="secondary" data-action="details-back" data-file-id="${fileId}">Back</button>
-				</div>
-				<div class="version-list">
-					${versions.length ? versions.map(function(version, index) {
-						const isCurrent = index === 0;
-						const versionNumber = isCurrent ? null : versions.length - index;
-						return `
-							<div class="version-item">
-								<div class="version-thumb"><img src="${getPreviewImage(fileEntry)}" alt="Version preview"></div>
-								<div class="version-body">
-									<h4>${isCurrent ? 'Current version' : `Version ${versionNumber}`}${version.label ? ` — ${escapeHtml(version.label)}` : ''}</h4>
-									<small>${escapeHtml(version.createdBy?.name ?? 'shared-user')}</small>
-									<small>${formatDate(version.createdAt)} · ${formatBytes(version.size)}</small>
-								</div>
-								<div class="version-actions" style="position: relative;">
-									<button type="button" class="secondary menu-button" data-action="context-menu" data-file-id="${fileId}" data-version-id="${version.id}" aria-label="Open version actions" aria-expanded="false">⋯</button>
-								</div>
+
+		container.innerHTML = `
+			<div class="version-list">
+				${versions.length ? versions.map(function(version, index) {
+					const isCurrent = index === 0;
+					const versionNumber = isCurrent ? null : versions.length - index;
+					return `
+						<div class="version-item">
+							<div class="version-thumb"><img src="${getPreviewImage(fileEntry)}" alt="Version preview"></div>
+							<div class="version-body">
+								<h4>${isCurrent ? 'Current version' : `Version ${versionNumber}`}${version.label ? ` — ${escapeHtml(version.label)}` : ''}</h4>
+								<small>${escapeHtml(version.createdBy?.name ?? 'Unknown')}</small>
+								<small>${formatDate(version.createdAt)} · ${formatBytes(version.size)}</small>
 							</div>
-						`;
-						}).join('') : '<div class="file-meta">No versions recorded yet.</div>'}
-				</div>
+							<div class="version-actions" style="position: relative;">
+								<button type="button" class="secondary menu-button" data-action="context-menu" data-file-id="${fileId}" data-version-id="${version.id}" aria-label="Open version actions" aria-expanded="false">⋯</button>
+							</div>
+						</div>
+					`;
+				}).join('') : '<div class="file-meta">No versions recorded yet.</div>'}
 			</div>
 		`;
 
-		for (const button of elements.detailsPanelContent.querySelectorAll('[data-action][data-file-id]')) {
+		for (const button of container.querySelectorAll('[data-action="context-menu"][data-version-id]')) {
 			button.addEventListener('click', function(event) {
-				if (button.dataset.action === 'details-back') {
-					openDetailsPanel(fileId);
+				event.preventDefault();
+				event.stopPropagation();
+				const menuEntries = [];
+				const version = versions.find((entry) => entry.id === button.dataset.versionId);
+				if (!version) {
 					return;
 				}
-				if (button.dataset.action === 'context-menu' && button.dataset.versionId) {
-					event.preventDefault();
-					event.stopPropagation();
-					const menuEntries = [];
-					const version = versions.find((entry) => entry.id === button.dataset.versionId);
-					if (!version) {
-						return;
-					}
-					const isCurrent = versions[0]?.id === version.id;
-					menuEntries.push({ label: 'View', action: 'version-view', danger: false });
-					menuEntries.push({ divider: true });
-					menuEntries.push(isCurrent
-						? { label: 'Name current', action: 'version-name-current', danger: false }
-						: { label: 'Rename', action: 'version-rename', danger: false }
-					);
-					if (!isCurrent) {
-						menuEntries.push({ label: 'Restore', action: 'version-restore', danger: false });
-					}
-					menuEntries.push({ label: 'Download', action: 'version-download', danger: false });
-					if (!isCurrent) {
+				const isCurrent = versions[0]?.id === version.id;
+				menuEntries.push({ label: 'View', action: 'version-view', danger: false });
+				menuEntries.push({ divider: true });
+				menuEntries.push(isCurrent
+					? { label: 'Name current', action: 'version-name-current', danger: false }
+					: { label: 'Rename', action: 'version-rename', danger: false }
+				);
+				if (!isCurrent) {
+					menuEntries.push({ label: 'Restore', action: 'version-restore', danger: false });
+				}
+				menuEntries.push({ label: 'Download', action: 'version-download', danger: false });
+				if (!isCurrent) {
 					menuEntries.push({ divider: true });
 					menuEntries.push({ label: 'Delete', action: 'version-delete', danger: true });
-					}
+				}
 
-					closeOpenContextMenu();
-					const menu = document.createElement('div');
-					menu.className = 'context-menu';
-					menu.innerHTML = menuEntries.map(function(entry) {
+				closeOpenContextMenu();
+				const menu = document.createElement('div');
+				menu.className = 'context-menu';
+				menu.innerHTML = menuEntries.map(function(entry) {
 					if (entry.divider) {
 						return '<div class="context-menu-separator"></div>';
 					}
 					const accentClass = entry.accent ? 'accent' : '';
 					return `<button type="button" data-context-action="${entry.action}" data-file-id="${fileId}" data-version-id="${version.id}" class="${entry.danger ? 'danger' : ''} ${accentClass}">${entry.label}</button>`;
-					}).join('');
-					for (const menuButton of menu.querySelectorAll('[data-context-action][data-file-id]')) {
-						menuButton.addEventListener('click', function(menuEvent) {
-							menuEvent.preventDefault();
-							menuEvent.stopPropagation();
-							closeOpenContextMenu();
-							handleVersionAction(menuButton.dataset.contextAction, fileId, version.id);
-						});
-					}
-					positionContextMenu(menu, button, 220, 220);
-					document.body.appendChild(menu);
-					button.setAttribute('aria-expanded', 'true');
-					return;
+				}).join('');
+				for (const menuButton of menu.querySelectorAll('[data-context-action][data-file-id]')) {
+					menuButton.addEventListener('click', function(menuEvent) {
+						menuEvent.preventDefault();
+						menuEvent.stopPropagation();
+						closeOpenContextMenu();
+						handleVersionAction(menuButton.dataset.contextAction, fileId, version.id);
+					});
 				}
+				positionContextMenu(menu, button, 220, 220);
+				document.body.appendChild(menu);
+				button.setAttribute('aria-expanded', 'true');
 			});
 		}
 	} catch (error) {
-		setStatus(error.message, true);
+		container.innerHTML = `<div class="tab-empty tab-error">Could not load versions: ${escapeHtml(error.message)}</div>`;
+	}
+}
+
+async function renderVersionList(fileId) {
+	openDetailsPanel(fileId);
+	appState.activeDetailTab = 'versions';
+	const container = elements.detailsPanelContent.querySelector('#detail-tab-content');
+	if (container) {
+		const tabButtons = elements.detailsPanelContent.querySelectorAll('.detail-tab-btn');
+		for (const b of tabButtons) {
+			b.classList.toggle('active', b.dataset.tab === 'versions');
+			b.setAttribute('aria-selected', b.dataset.tab === 'versions' ? 'true' : 'false');
+		}
+		await renderVersionsTabContent(fileId, container);
 	}
 }
 
@@ -977,6 +1106,7 @@ async function handleVersionAction(action, fileId, versionId) {
 		case 'version-restore':
 			await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}/restore`, { method: 'POST' });
 			await loadPage();
+			appState.activeDetailTab = 'versions';
 			openDetailsPanel(fileId);
 			return;
 		case 'version-download':

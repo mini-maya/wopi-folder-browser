@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const path = require('path');
+const path = require('node:path');
 const logger = require('morgan');
 const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
