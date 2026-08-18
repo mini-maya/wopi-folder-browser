@@ -75,6 +75,24 @@ button.secondary {
   color: var(--secondary-text);
 }
 
+button.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0;
+  border-radius: 10px;
+}
+
+button.icon-button svg {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+}
+
 button.danger {
   background: var(--danger);
 }
@@ -93,6 +111,7 @@ button.danger:hover {
   --viewer-width: 560px;
   display: grid;
   grid-template-columns: var(--viewer-width) 0.75rem minmax(480px, 1fr);
+  height: 100vh;
   min-height: 100vh;
   gap: 0;
   padding: 1rem;
@@ -146,6 +165,7 @@ button.danger:hover {
   gap: 1rem;
   padding: 1.25rem;
   min-width: 0;
+  min-height: 0;
 }
 
 .viewer {
@@ -281,10 +301,15 @@ button.danger:hover {
   padding: 1rem;
   background: var(--surface-subtle);
   border-radius: 14px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
 }
 
-.details div + div {
-  margin-top: 0.8rem;
+.details div {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
 }
 
 .details dt {
@@ -295,8 +320,9 @@ button.danger:hover {
 }
 
 .details dd {
-  margin: 0.25rem 0 0;
+  margin: 0;
   word-break: break-word;
+  color: var(--text-main);
 }
 
 .status {
@@ -391,6 +417,8 @@ button.danger:hover {
 
 .table-wrapper {
   position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   border: 1px solid var(--border-default);
   border-radius: 14px;

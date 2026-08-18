@@ -1,6 +1,6 @@
 {
   "name": "wopi-folder-browser",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "description": "Folder-backed WOPI host for Collabora Online",
   "scripts": {
@@ -16,10 +16,10 @@
     "debug": "~2.6.9",
     "express": "~4.22",
     "express-session": "^1.19.0",
-    "morgan": "~1.10",
+    "morgan": "^1.11.0",
     "multer": "^2.2.0",
-    "sharp": "^0.34.3",
     "session-file-store": "^1.5.0",
+    "sharp": "^0.35.3",
     "xpath": "0.0.32"
   },
   "bugs": {

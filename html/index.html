@@ -16,7 +16,7 @@
          <h2 id="viewer-title">No document opened yet</h2>
          <p id="viewer-subtitle">Choose a file from the list to open it in Collabora.</p>
        </div>
-       <button id="close-viewer-button" type="button" class="secondary hidden" aria-label="Close document">
+       <button id="close-viewer-button" type="button" class="secondary icon-button hidden" aria-label="Close document">
          <svg class="close-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
            <path d="M7 7L17 17M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
          </svg>
@@ -43,7 +43,13 @@
            <option value="light">Light</option>
            <option value="dark">Dark</option>
          </select>
-         <button id="refresh-button" type="button" class="secondary">Refresh</button>
+         <button id="refresh-button" type="button" class="secondary icon-button" aria-label="Refresh documents">
+           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+             <path d="M20 11a8 8 0 0 0-13.66-5.66M4 13a8 8 0 0 0 13.66 5.66" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+             <path d="M4 4v6h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+             <path d="M20 20v-6h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+           </svg>
+         </button>
          <div id="auth-controls" class="auth-controls">
            <button id="my-files-button" type="button" class="secondary hidden">My Files</button>
            <button id="shared-files-button" type="button" class="secondary hidden">Shared Files</button>
@@ -92,7 +98,11 @@
      <aside id="details-panel" class="details-panel hidden" aria-live="polite">
        <div class="details-panel-header">
          <h3>Document details</h3>
-         <button id="close-details-panel-button" type="button" class="secondary" aria-label="Close details panel">Close</button>
+         <button id="close-details-panel-button" type="button" class="secondary icon-button" aria-label="Close details panel">
+          <svg class="close-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M7 7L17 17M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+        </button>
        </div>
        <div id="details-panel-content" class="details-panel-content"></div>
      </aside>
@@ -126,7 +136,11 @@
    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="folder-picker-title">
      <div class="modal-header">
        <h3 id="folder-picker-title">Choose target folder</h3>
-       <button id="folder-picker-cancel" type="button" class="secondary">Cancel</button>
+       <button id="folder-picker-cancel" type="button" class="secondary icon-button" aria-label="Close folder picker">
+         <svg class="close-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+           <path d="M7 7L17 17M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+         </svg>
+       </button>
      </div>
      <form id="folder-picker-form" class="modal-body">
        <label class="modal-field">
@@ -151,7 +165,11 @@
          <h3 id="upload-modal-title">Upload files</h3>
          <p id="upload-target-label" class="modal-description">Root folder</p>
        </div>
-       <button id="upload-cancel" type="button" class="secondary">Cancel</button>
+       <button id="upload-cancel" type="button" class="secondary icon-button" aria-label="Close upload dialog">
+         <svg class="close-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+           <path d="M7 7L17 17M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+         </svg>
+       </button>
      </div>
      <div class="modal-body">
        <input id="upload-file-input" type="file" multiple class="hidden">
@@ -181,7 +199,11 @@
    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
      <div class="modal-header">
        <h3 id="login-modal-title">Login</h3>
-       <button id="login-cancel" type="button" class="secondary">Cancel</button>
+       <button id="login-cancel" type="button" class="secondary icon-button" aria-label="Close login dialog">
+         <svg class="close-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+           <path d="M7 7L17 17M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+         </svg>
+       </button>
      </div>
      <form id="login-form" class="modal-body">
        <label class="modal-field">
@@ -203,7 +225,11 @@
    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="account-modal-title">
      <div class="modal-header">
        <h3 id="account-modal-title">Account</h3>
-       <button id="account-cancel" type="button" class="secondary">Close</button>
+       <button id="account-cancel" type="button" class="secondary icon-button" aria-label="Close account dialog">
+         <svg class="close-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+           <path d="M7 7L17 17M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+         </svg>
+       </button>
      </div>
      <form id="account-form" class="modal-body">
        <label class="modal-field">
@@ -225,7 +251,11 @@
    <div class="modal-card admin-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-modal-title">
      <div class="modal-header">
        <h3 id="admin-modal-title">Administration / Users</h3>
-       <button id="admin-cancel" type="button" class="secondary">Close</button>
+       <button id="admin-cancel" type="button" class="secondary icon-button" aria-label="Close administration dialog">
+         <svg class="close-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+           <path d="M7 7L17 17M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+         </svg>
+       </button>
      </div>
      <div class="modal-body">
        <form id="admin-create-user-form" class="admin-section">

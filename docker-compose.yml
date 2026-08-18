@@ -11,7 +11,7 @@ services:
       COLLABORA_PUBLIC_URL: http://localhost:9980
       ACCESS_TOKEN_SECRET: change-me-for-real-usage
       SESSION_SECRET: change-me-session-secret
-      PASSWORD_MIN_LENGTH: 4
+      PASSWORD_MIN_LENGTH: 12
       MAX_DOCUMENT_SIZE: 100mb
     ports:
       - "3000:3000"
