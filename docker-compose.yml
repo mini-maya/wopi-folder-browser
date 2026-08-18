@@ -13,6 +13,7 @@ services:
       SESSION_SECRET: change-me-session-secret
       PASSWORD_MIN_LENGTH: 4
       MAX_DOCUMENT_SIZE: 100mb
+      THUMBNAIL_DEBUG: "1"
     ports:
       - "3000:3000"
     volumes:

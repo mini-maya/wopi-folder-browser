@@ -35,6 +35,7 @@ This project is a small WOPI host for Collabora Online CODE. It lists Office fil
 - supports creating new text/spreadsheet/presentation files and optional template-based creation
 - supports rename/move/copy/delete, favorites, recent files, and version history restore
 - supports file uploads into the root folder or a selected folder, including drag-and-drop of files and folders
+- supports Office thumbnails in the details panel via Collabora `convert-to` with version-based cache
 - supports authentication with session cookies, personal user storage, and admin user management
 - exposes feature matrix, diagnostics, and supported-format endpoints
 - runs together with a Collabora CODE container via Docker Compose
@@ -132,9 +133,18 @@ This keeps the document volume clean while preserving the app's registry, locks,
 | `ALLOW_PDF_EXPORT` | Feature flag for PDF export integration hooks | `1` |
 | `ALLOW_PUBLIC_EDITING` | Enables/disables edit-capable public links | `1` |
 | `PREVIEW_GENERATION` | Feature flag for preview generation hooks | `1` |
+| `THUMBNAIL_MAX_WIDTH` | Maximum thumbnail width in pixels | `1024` |
+| `THUMBNAIL_MAX_HEIGHT` | Maximum thumbnail height in pixels | `1024` |
+| `THUMBNAIL_RETRY_COUNT` | Conversion retry attempts for temporary failures | `3` |
+| `THUMBNAIL_RETRY_DELAY_MS` | Delay between conversion retries in ms | `300` |
+| `THUMBNAIL_REQUEST_TIMEOUT_MS` | Timeout for capabilities/convert requests in ms | `15000` |
+| `THUMBNAIL_TOKEN_TTL_MS` | Read-only WOPI token lifetime for thumbnail requests in ms | `60000` |
+| `THUMBNAIL_DEBUG` | Enables detailed thumbnail debug logs in backend and details-preview flow | `0` |
 | `DEFAULT_TEXT_DOCUMENT_NAME` | Default localized base name for new text docs | `Untitled document` |
 | `DEFAULT_SPREADSHEET_NAME` | Default localized base name for new spreadsheets | `Untitled spreadsheet` |
 | `DEFAULT_PRESENTATION_NAME` | Default localized base name for new presentations | `Untitled presentation` |
+
+Thumbnail conversion targets Collabora on `POST /cool/convert-to/png`. The service first tries a WOPI-based convert request and automatically falls back to multipart upload when the Collabora instance rejects WOPI convert payloads.
 
 ## Running without Docker
 
@@ -154,6 +164,7 @@ COLLABORA_PUBLIC_URL=http://localhost:9980
 ACCESS_TOKEN_SECRET=change-me
 SESSION_SECRET=change-me-session
 PASSWORD_MIN_LENGTH=12
+THUMBNAIL_DEBUG=0
 ```
 
 ## Production setup: `office.lan` + `collabora.lan`

@@ -24,10 +24,11 @@ const { createDocumentsZip, createFolderZip } = require('../lib/folderZip');
 const { createShare, getShare } = require('../lib/shareStore');
 const { getSharedStorageRoot, STORAGE_CONTEXT_SHARED } = require('../lib/storageContext');
 const { createDocumentFromTemplate, listTemplates } = require('../lib/templateStore');
+const { renderOfficeThumbnail } = require('../lib/thumbnailService');
 const { getRequestUser } = require('../lib/userContext');
 const { addRecent, loadUserState, setFavorite } = require('../lib/userStateStore');
 const { deleteVersion, getVersionEntry, listVersions, renameVersion, restoreVersion } = require('../lib/versionStore');
-const { invalidatePreview } = require('../lib/previewStore');
+const { invalidatePreview, resolveThumbnailAbsolutePath } = require('../lib/previewStore');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -38,6 +39,17 @@ function getDocumentRoot(req) {
 
 function getSharedDocumentRoot() {
 	return getSharedStorageRoot(config);
+}
+
+function logThumbnailDebug(message, details) {
+	if (!config.thumbnailDebug) {
+		return;
+	}
+	if (details !== undefined) {
+		console.info('[thumbnail-debug]', message, details);
+		return;
+	}
+	console.info('[thumbnail-debug]', message);
 }
 
 const FEATURE_MATRIX = [
@@ -53,7 +65,7 @@ const FEATURE_MATRIX = [
 	{ feature: 'Sharing users/groups/teams ACL', category: 5, note: 'Not available in this sample because no auth/ACL backend exists.' },
 	{ feature: 'Activities', category: 3, note: 'Session-level aggregated activity events persisted in app state.' },
 	{ feature: 'Search integration', category: 4, note: 'Basic file metadata search implemented using existing file listing.' },
-	{ feature: 'Preview generation/cache/indexing queue', category: 5, note: 'No rendering worker in sample host; invalidation hook only.' },
+	{ feature: 'Preview generation/cache/indexing queue', category: 3, note: 'Office detail thumbnails are rendered via Collabora convert-to and cached per file version.' },
 	{ feature: 'Admin config + diagnostics', category: 3, note: 'Configuration/diagnostic endpoints implemented.' }
 ];
 
@@ -168,7 +180,13 @@ router.get('/config', function(req, res) {
 			allowTemplates: config.allowTemplates,
 			allowPdfExport: config.allowPdfExport,
 			allowPublicEditing: config.allowPublicEditing,
-			previewGeneration: config.previewGeneration
+			previewGeneration: config.previewGeneration,
+			officeThumbnails: true
+		},
+		thumbnail: {
+			maxWidth: config.thumbnailMaxWidth,
+			maxHeight: config.thumbnailMaxHeight,
+			debug: config.thumbnailDebug
 		},
 		defaultDocumentNames: {
 			text: getDocumentTypeFileName('text'),
@@ -214,6 +232,69 @@ router.get('/files/:fileId', async function(req, res, next) {
 	try {
 		const document = await getDocumentById(getDocumentRoot(req), req.params.fileId);
 		res.json({ file: document });
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.get('/files/:fileId/thumbnail', async function(req, res, next) {
+	try {
+		const documentRoot = getDocumentRoot(req);
+		const document = await getDocumentById(documentRoot, req.params.fileId);
+		logThumbnailDebug('thumbnail request received', {
+			fileId: document.id,
+			version: document.version,
+			extension: document.extension
+		});
+		if (!config.previewGeneration) {
+			res.json({
+				status: 'CONVERSION_NOT_SUPPORTED',
+				fileId: document.id,
+				version: document.version,
+				error: 'Preview generation is disabled.'
+			});
+			return;
+		}
+		const user = getRequestUser(req);
+		const payload = await renderOfficeThumbnail({
+			documentRoot: documentRoot,
+			document: document,
+			appBaseUrl: config.getAppBaseUrl(req),
+			accessTokenSecret: config.accessTokenSecret,
+			accessTokenTtlMs: config.thumbnailTokenTtlMs,
+			collaboraInternalUrl: config.collaboraInternalUrl,
+			maxWidth: config.thumbnailMaxWidth,
+			maxHeight: config.thumbnailMaxHeight,
+			retryAttempts: config.thumbnailRetryCount,
+			retryDelayMs: config.thumbnailRetryDelayMs,
+			requestTimeoutMs: config.thumbnailRequestTimeoutMs,
+			userId: user.id,
+			userName: user.displayName,
+			storageContext: req.storageContext?.context || STORAGE_CONTEXT_SHARED
+		});
+		logThumbnailDebug('thumbnail request completed', {
+			fileId: payload.fileId,
+			version: payload.version,
+			status: payload.status
+		});
+		res.json(payload);
+	} catch (error) {
+		logThumbnailDebug('thumbnail request failed', {
+			fileId: req.params.fileId,
+			error: error.message
+		});
+		next(error);
+	}
+});
+
+router.get('/thumbnails/:fileId/:version', async function(req, res, next) {
+	try {
+		const absolutePath = await resolveThumbnailAbsolutePath(getDocumentRoot(req), req.params.fileId, req.params.version);
+		if (!absolutePath) {
+			throw createHttpError(404, 'Thumbnail not found.');
+		}
+		res.type('image/png');
+		res.sendFile(absolutePath);
 	} catch (error) {
 		next(error);
 	}
@@ -725,6 +806,9 @@ router.get('/admin/config', async function(req, res, next) {
 			allowPdfExport: config.allowPdfExport,
 			allowPublicEditing: config.allowPublicEditing,
 			previewGeneration: config.previewGeneration,
+			thumbnailMaxWidth: config.thumbnailMaxWidth,
+			thumbnailMaxHeight: config.thumbnailMaxHeight,
+			thumbnailRetryCount: config.thumbnailRetryCount,
 			supportedFormats: supportedFormats
 		});
 	} catch (error) {

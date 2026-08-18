@@ -17,9 +17,22 @@ const userStore = require('./lib/userStore');
 
 const app = express();
 
+function getSafeRequestUrl(req) {
+	try {
+		const parsed = new URL(req.originalUrl || req.url, 'http://localhost');
+		if (parsed.searchParams.has('access_token')) {
+			parsed.searchParams.set('access_token', 'REDACTED');
+		}
+		return `${parsed.pathname}${parsed.search}`;
+	} catch (error) {
+		return req.originalUrl || req.url || '/';
+	}
+}
+
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
-app.use(logger('dev'));
+logger.token('safe-url', getSafeRequestUrl);
+app.use(logger(':method :safe-url :status :response-time ms - :res[content-length]'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());

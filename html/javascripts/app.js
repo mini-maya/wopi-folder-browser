@@ -105,7 +105,10 @@ const appState = {
 	applyConflictToAll: false,
 	integrationPendingData: null,
 	activeDetailTab: 'share',
-	activeDetailFileId: null
+	activeDetailFileId: null,
+	detailThumbnailRequestId: 0,
+	detailThumbnailCache: new Map(),
+	detailThumbnailInFlight: new Map()
 };
 
 const DEFAULT_VIEWER_TITLE = 'No document opened yet';
@@ -117,6 +120,11 @@ const SPLITTER_WIDTH = 12;
 const THEME_STORAGE_KEY = 'wopi-folder-browser-theme';
 const THEME_MODES = new Set(['auto', 'light', 'dark']);
 const systemThemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+const OFFICE_THUMBNAIL_EXTENSIONS = new Set([
+	'.doc', '.docx', '.odt',
+	'.xls', '.xlsx', '.ods',
+	'.ppt', '.pptx', '.odp'
+]);
 
 function isFolderEntry(document) {
 	return Boolean(document?.isDirectory);
@@ -655,6 +663,81 @@ function getPreviewImage(document) {
 	return buildFilePreviewSvg(document);
 }
 
+function supportsOfficeDetailsThumbnail(document) {
+	if (!document || document.isDirectory) {
+		return false;
+	}
+	return OFFICE_THUMBNAIL_EXTENSIONS.has(String(document.extension || '').toLowerCase());
+}
+
+function isThumbnailDebugEnabled() {
+	return Boolean(appState.config?.thumbnail?.debug);
+}
+
+async function loadOfficeDetailsThumbnail(document) {
+	if (!supportsOfficeDetailsThumbnail(document)) {
+		return;
+	}
+	const previewImage = elements.detailsPanelContent.querySelector('.details-preview img');
+	if (!previewImage) {
+		return;
+	}
+	const requestId = appState.detailThumbnailRequestId + 1;
+	appState.detailThumbnailRequestId = requestId;
+	const cacheKey = `${document.id}:${document.version}`;
+	const cachedThumbnailUrl = appState.detailThumbnailCache.get(cacheKey);
+	if (cachedThumbnailUrl) {
+		previewImage.src = cachedThumbnailUrl;
+		previewImage.classList.remove('folder-icon');
+		return;
+	}
+	const existingRequest = appState.detailThumbnailInFlight.get(cacheKey);
+	if (existingRequest) {
+		try {
+			const payload = await existingRequest;
+			if (appState.detailThumbnailRequestId === requestId && appState.activeDetailFileId === document.id && payload?.status === 'THUMBNAIL_RENDERED' && payload?.thumbnailUrl) {
+				previewImage.src = payload.thumbnailUrl;
+				previewImage.classList.remove('folder-icon');
+			}
+		} catch (error) {
+			// Keep fallback icon in the detail panel when thumbnail rendering fails.
+		}
+		return;
+	}
+	try {
+		const pendingPayload = requestJson(`/api/files/${encodeURIComponent(document.id)}/thumbnail`);
+		appState.detailThumbnailInFlight.set(cacheKey, pendingPayload);
+		const payload = await pendingPayload;
+		appState.detailThumbnailInFlight.delete(cacheKey);
+		if (isThumbnailDebugEnabled()) {
+			console.info('[thumbnail-debug] details thumbnail response', {
+				fileId: document.id,
+				version: document.version,
+				status: payload?.status || null,
+				hasThumbnailUrl: Boolean(payload?.thumbnailUrl)
+			});
+		}
+		if (appState.detailThumbnailRequestId !== requestId || appState.activeDetailFileId !== document.id) {
+			return;
+		}
+		if (payload.status === 'THUMBNAIL_RENDERED' && payload.thumbnailUrl) {
+			appState.detailThumbnailCache.set(cacheKey, payload.thumbnailUrl);
+			previewImage.src = payload.thumbnailUrl;
+			previewImage.classList.remove('folder-icon');
+		}
+	} catch (error) {
+		appState.detailThumbnailInFlight.delete(cacheKey);
+		if (isThumbnailDebugEnabled()) {
+			console.info('[thumbnail-debug] details thumbnail request failed', {
+				fileId: document.id,
+				version: document.version,
+				error: error.message
+			});
+		}
+		// Keep fallback icon in the detail panel when thumbnail rendering fails.
+	}
+}
+
 function openDetailsPanel(fileId) {
 	const document = getDocumentById(fileId);
 	if (!document) {
@@ -746,6 +829,9 @@ function renderDetailsPanel(document) {
 		button.addEventListener('click', function() {
 			handleDetailsAction(button.dataset.action, button.dataset.fileId);
 		});
+	}
+	if (!isFolder) {
+		loadOfficeDetailsThumbnail(document);
 	}
 }
 
