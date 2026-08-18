@@ -6,7 +6,7 @@ const test = require('node:test');
 let treeHelpers;
 
 test.before(async function() {
-	treeHelpers = await import('../html/javascripts/fileBrowserTree.mjs');
+	treeHelpers = await import('../html/javascripts/tree/fileBrowserTree.mjs');
 });
 
 test('getParentPath returns the parent folder path', function() {

@@ -1,4 +1,15 @@
-import { getFolderSelectionState, getFolderSizeBytes, getVisibleTreeEntries } from './fileBrowserTree.mjs';
+import { getFolderSelectionState, getFolderSizeBytes, getVisibleTreeEntries } from './tree/fileBrowserTree.mjs';
+import { requestJson } from './api/requestJson.mjs';
+import { collectDroppedUploadItems } from './upload/dropItems.mjs';
+import { buildUploadDestinationPath, getUploadSummaryLabel, normalizeUploadRelativePath } from './upload/uploadPaths.mjs';
+import { createUploadController } from './upload/uploadController.mjs';
+import { buildFilePreviewSvg, buildFolderPictogramSvg, folderContainsFiles } from './ui/filePreviews.mjs';
+import { escapeHtml, formatBytes, formatDate } from './ui/formatting.mjs';
+import { createDocumentListController } from './documents/listController.mjs';
+import { createAuthController } from './auth/authController.mjs';
+import { createThemeController } from './ui/themeController.mjs';
+import { createViewerLayoutController } from './viewer/layoutController.mjs';
+import { createViewerSessionController } from './viewer/sessionController.mjs';
 
 const elements = {
 	layout: document.querySelector('#app-layout'),
@@ -114,34 +125,25 @@ const appState = {
 const DEFAULT_VIEWER_TITLE = 'No document opened yet';
 const DEFAULT_VIEWER_SUBTITLE = 'Choose a file from the list to open it in Collabora.';
 const DEFAULT_VIEWER_WIDTH = 800;
-const MIN_VIEWER_WIDTH = 480;
-const MIN_SIDEBAR_WIDTH = 480;
-const SPLITTER_WIDTH = 12;
-const THEME_STORAGE_KEY = 'wopi-folder-browser-theme';
-const THEME_MODES = new Set(['auto', 'light', 'dark']);
-const systemThemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 const OFFICE_THUMBNAIL_EXTENSIONS = new Set([
 	'.doc', '.docx', '.odt',
 	'.xls', '.xlsx', '.ods',
 	'.ppt', '.pptx', '.odp'
 ]);
 
+const themeController = createThemeController({
+	appState: appState,
+	themeSelect: elements.themeSelect
+});
+
+const viewerLayoutController = createViewerLayoutController({
+	layout: elements.layout,
+	layoutSplitter: elements.layoutSplitter,
+	appState: appState
+});
+
 function isFolderEntry(document) {
 	return Boolean(document?.isDirectory);
-}
-
-function filterNestedDocuments(documents) {
-	const folders = documents
-		.filter((document) => isFolderEntry(document))
-		.sort((left, right) => left.relativePath.length - right.relativePath.length);
-	return documents.filter((document) => !folders.some((folder) => folder.id !== document.id && document.relativePath.startsWith(`${folder.relativePath}/`)));
-}
-
-function getBulkSelectedDocuments() {
-	const selectedDocuments = Array.from(appState.selectedFileIds)
-		.map((fileId) => getDocumentById(fileId))
-		.filter(Boolean);
-	return filterNestedDocuments(selectedDocuments);
 }
 
 function setStatus(message, isError = false) {
@@ -149,500 +151,68 @@ function setStatus(message, isError = false) {
 	elements.statusMessage.classList.toggle('error', isError);
 }
 
-function getStoredThemeMode() {
-	const storedMode = localStorage.getItem(THEME_STORAGE_KEY);
-	if (storedMode && THEME_MODES.has(storedMode)) {
-		return storedMode;
+const viewerSessionController = createViewerSessionController({
+	elements: elements,
+	appState: appState,
+	requestJson: requestJson,
+	viewerLayoutController: viewerLayoutController,
+	setStatus: setStatus,
+	reloadPage: async function() {
+		await loadPage();
+	},
+	defaultViewerWidth: DEFAULT_VIEWER_WIDTH,
+	defaultViewerTitle: DEFAULT_VIEWER_TITLE,
+	defaultViewerSubtitle: DEFAULT_VIEWER_SUBTITLE
+});
+
+const authController = createAuthController({
+	elements: elements,
+	appState: appState,
+	requestJson: requestJson,
+	formatDate: formatDate,
+	setStatus: setStatus,
+	loadPage: async function() {
+		await loadPage();
+	},
+	closeViewer: async function() {
+		await viewerSessionController.closeViewer();
 	}
+});
 
-	return 'auto';
-}
+const documentListController = createDocumentListController({
+	elements: elements,
+	appState: appState,
+	searchInput: elements.searchInput,
+	isFolderEntry: isFolderEntry,
+	getDocumentById: getDocumentById,
+	getFolderSelectionState: getFolderSelectionState,
+	getVisibleTreeEntries: getVisibleTreeEntries,
+	buildFolderPictogramSvg: buildFolderPictogramSvg,
+	buildFilePreviewSvg: buildFilePreviewSvg,
+	folderContainsFiles: folderContainsFiles,
+	escapeHtml: escapeHtml,
+	formatDate: formatDate,
+	formatBytes: formatBytes,
+	onCloseOpenContextMenu: closeOpenContextMenu,
+	onShowContextMenu: showContextMenu,
+	onHandleFileAction: handleFileAction
+});
 
-function resolveTheme(mode) {
-	if (mode === 'dark') {
-		return 'dark';
-	}
-	if (mode === 'light') {
-		return 'light';
-	}
-
-	return systemThemeMediaQuery.matches ? 'dark' : 'light';
-}
-
-function applyThemeMode(mode, persistPreference) {
-	const normalizedMode = THEME_MODES.has(mode) ? mode : 'auto';
-	const resolvedTheme = resolveTheme(normalizedMode);
-	appState.themeMode = normalizedMode;
-	document.body.dataset.theme = resolvedTheme;
-	elements.themeSelect.value = normalizedMode;
-	if (persistPreference) {
-		localStorage.setItem(THEME_STORAGE_KEY, normalizedMode);
-	}
-}
-
-function initializeTheme() {
-	applyThemeMode(getStoredThemeMode(), false);
-	systemThemeMediaQuery.addEventListener('change', function() {
-		if (appState.themeMode === 'auto') {
-			applyThemeMode('auto', false);
-		}
-	});
-}
-
-function syncViewerLayout() {
-	const layoutPadding = getLayoutHorizontalPadding();
-	const layoutWidth = elements.layout.getBoundingClientRect().width - layoutPadding;
-	const maximumWidth = Math.max(MIN_VIEWER_WIDTH, layoutWidth - SPLITTER_WIDTH - MIN_SIDEBAR_WIDTH);
-	const width = appState.viewerOpen
-		? Math.min(Math.max(MIN_VIEWER_WIDTH, appState.viewerPanelWidth), maximumWidth)
-		: 0;
-	appState.viewerPanelWidth = width;
-	elements.layout.style.setProperty('--viewer-width', `${width}px`);
-	elements.layout.style.gridTemplateColumns = appState.viewerOpen
-		? `${width}px ${SPLITTER_WIDTH}px minmax(${MIN_SIDEBAR_WIDTH}px, 1fr)`
-		: 'minmax(0, 1fr)';
-	elements.layout.classList.toggle('viewer-open', appState.viewerOpen);
-	elements.layoutSplitter.classList.toggle('hidden', !appState.viewerOpen);
-}
-
-function getLayoutHorizontalPadding() {
-	const layoutStyles = window.getComputedStyle(elements.layout);
-	return parseFloat(layoutStyles.paddingLeft) + parseFloat(layoutStyles.paddingRight);
-}
-
-function startViewerResize(event) {
-	if (!appState.viewerOpen) {
-		return;
-	}
-	appState.isResizingViewer = true;
-	document.body.style.userSelect = 'none';
-	document.body.style.cursor = 'col-resize';
-	event.preventDefault();
-	event.stopPropagation();
-	elements.layoutSplitter.setPointerCapture?.(event.pointerId);
-}
-
-function updateViewerResize(event) {
-	if (!appState.isResizingViewer) {
-		return;
-	}
-	const layoutBounds = elements.layout.getBoundingClientRect();
-	const layoutWidth = layoutBounds.width - getLayoutHorizontalPadding();
-	const maximumWidth = Math.max(MIN_VIEWER_WIDTH, layoutWidth - SPLITTER_WIDTH - MIN_SIDEBAR_WIDTH);
-	const nextWidth = Math.min(
-		Math.max(MIN_VIEWER_WIDTH, event.clientX - layoutBounds.left - SPLITTER_WIDTH),
-		maximumWidth
-	);
-	appState.viewerPanelWidth = nextWidth;
-	syncViewerLayout();
-}
-
-function stopViewerResize() {
-	if (!appState.isResizingViewer) {
-		return;
-	}
-	appState.isResizingViewer = false;
-	document.body.style.userSelect = '';
-	document.body.style.cursor = '';
-}
-
-function formatBytes(bytes) {
-	if (bytes === 0) {
-		return '0 B';
-	}
-
-	const units = ['B', 'KB', 'MB', 'GB'];
-	const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-	const value = bytes / Math.pow(1024, unitIndex);
-	return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
-}
-
-function formatDate(isoDate) {
-	return new Intl.DateTimeFormat(undefined, {
-		dateStyle: 'medium',
-		timeStyle: 'short'
-	}).format(new Date(isoDate));
-}
-
-function normalizeUploadRelativePath(value) {
-	return String(value || '')
-		.replace(/\\/g, '/')
-		.split('/')
-		.filter(Boolean)
-		.join('/');
-}
-
-function buildUploadDestinationPath(relativePath, targetDirectory) {
-	const normalizedRelativePath = normalizeUploadRelativePath(relativePath);
-	const normalizedTargetDirectory = normalizeUploadRelativePath(targetDirectory);
-	if (!normalizedTargetDirectory) {
-		return normalizedRelativePath;
-	}
-	if (!normalizedRelativePath) {
-		return normalizedTargetDirectory;
-	}
-	return `${normalizedTargetDirectory}/${normalizedRelativePath}`;
-}
-
-function getUploadTargetLabel() {
-	return appState.uploadTargetDirectory || 'Root folder';
-}
-
-function getUploadSummaryLabel(count) {
-	return count === 0
-		? 'No files selected yet.'
-		: `${count} file${count === 1 ? '' : 's'} ready to upload.`;
-}
-
-function renderEmptyState(message = 'No supported documents or folders found. Create one with the New... menu.') {
-	elements.documentsBody.innerHTML = `
-		<tr>
-			<td colspan="6">
-				<div class="file-meta">${escapeHtml(message)}</div>
-			</td>
-		</tr>
-	`;
-	elements.selectAllFiles.checked = false;
-	updateBulkActionState([]);
-}
-
-function updateBulkActionState(documents) {
-	const selectedCount = appState.selectedFileIds.size;
-	elements.selectionSummary.textContent = `${selectedCount} selected`;
-	elements.selectionSummary.classList.toggle('hidden', selectedCount === 0);
-	elements.bulkActionsMenuButton.disabled = selectedCount === 0;
-	if (selectedCount === 0) {
-		closeOpenContextMenu();
-	}
-	if (!documents || documents.length === 0) {
-		elements.selectAllFiles.checked = false;
-		return;
-	}
-	const allSelected = documents.every((document) => appState.selectedFileIds.has(document.id));
-	elements.selectAllFiles.checked = documents.length > 0 && allSelected;
-}
-
-function collapseFolderAndDescendants(folderId) {
-	const folder = getDocumentById(folderId);
-	if (!folder || !folder.isDirectory) {
-		return;
-	}
-
-	const prefix = `${folder.relativePath}/`;
-	for (const document of appState.documents) {
-		if (document.isDirectory && document.relativePath.startsWith(prefix)) {
-			appState.expandedFolderIds.delete(document.id);
-		}
-	}
-	appState.expandedFolderIds.delete(folderId);
-}
-
-function toggleFolderExpansion(folderId) {
-	const folder = getDocumentById(folderId);
-	if (!folder || !folder.isDirectory) {
-		return;
-	}
-
-	if (appState.expandedFolderIds.has(folderId)) {
-		collapseFolderAndDescendants(folderId);
-		return;
-	}
-
-	appState.expandedFolderIds.add(folderId);
-}
-
-function getSelectionCascadeIds(fileId) {
-	const document = getDocumentById(fileId);
-	if (!document) {
-		return [fileId];
-	}
-	if (!document.isDirectory) {
-		return [document.id];
-	}
-
-	const prefix = `${document.relativePath}/`;
-	const cascadeDocumentIds = new Set(
-		appState.documents
-			.filter((entry) => entry.id === document.id || entry.relativePath.startsWith(prefix))
-			.map((entry) => entry.id)
-	);
-	return Array.from(cascadeDocumentIds);
-}
-
-function toggleDocumentSelection(fileId, checked) {
-	const affectedIds = getSelectionCascadeIds(fileId);
-	for (const affectedId of affectedIds) {
-		if (checked) {
-			appState.selectedFileIds.add(affectedId);
-		} else {
-			appState.selectedFileIds.delete(affectedId);
-		}
-	}
-	updateBulkActionState(appState.visibleDocuments.length ? appState.visibleDocuments : appState.documents);
-	for (const row of elements.documentsBody.querySelectorAll('tr[data-file-id]')) {
-		const rowFileId = row.dataset.fileId;
-		const isSelected = appState.selectedFileIds.has(rowFileId);
-		row.classList.toggle('selected-row', isSelected);
-		const checkbox = row.querySelector('.file-select-checkbox');
-		if (!checkbox) {
-			continue;
-		}
-
-		const rowDocument = getDocumentById(rowFileId);
-		if (rowDocument && rowDocument.isDirectory) {
-			const selectionState = getFolderSelectionState(rowDocument, appState.documents, appState.selectedFileIds);
-			checkbox.checked = selectionState.checked;
-			checkbox.indeterminate = false;
-			continue;
-		}
-
-		checkbox.checked = isSelected;
-		checkbox.indeterminate = false;
-	}
-}
-
-function escapeHtml(value) {
-	return String(value)
-		.replaceAll('&', '&amp;')
-		.replaceAll('<', '&lt;')
-		.replaceAll('>', '&gt;')
-		.replaceAll('"', '&quot;')
-		.replaceAll("'", '&#39;');
-}
-
-function folderContainsFiles(folderDocument) {
-	if (!folderDocument || !folderDocument.isDirectory) {
-		return false;
-	}
-	const prefix = `${folderDocument.relativePath}/`;
-	for (const document of appState.documents) {
-		if (!document.isDirectory && document.relativePath.startsWith(prefix)) {
-			return true;
-		}
-	}
-	return false;
-}
-
-function buildFolderPictogramSvg(options) {
-	const { isOpen, hasFiles, isFavorite, preferFavoriteIcon } = options;
-	const openFolderWithoutFilesSvg = `
-		<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" xml:space="preserve">
-			<g transform="translate(1.4065934065934016 1.4065934065934016) scale(2.81 2.81)">
-				<path d="M 73.538 35.162 l -52.548 1.952 c -1.739 0 -2.753 0.651 -3.232 2.323 L 6.85 76.754 c -0.451 1.586 -2.613 2.328 -4.117 2.328 h 0 C 1.23 79.082 0 77.852 0 76.349 l 0 -10.458 V 23.046 v -2.047 v -6.273 c 0 -2.103 1.705 -3.808 3.808 -3.808 h 27.056 c 1.01 0 1.978 0.401 2.692 1.115 l 7.85 7.85 c 0.714 0.714 1.683 1.115 2.692 1.115 H 69.73 c 2.103 0 3.808 1.705 3.808 3.808 v 1.301 C 73.538 26.106 73.538 35.162 73.538 35.162 z" fill="rgb(224,173,49)"/>
-				<path d="M 2.733 79.082 L 2.733 79.082 c 1.503 0 2.282 -1.147 2.733 -2.733 l 10.996 -38.362 c 0.479 -1.672 2.008 -2.824 3.748 -2.824 h 67.379 c 1.609 0 2.765 1.546 2.311 3.09 L 79.004 75.279 c -0.492 1.751 -1.571 3.818 -3.803 3.803 C 75.201 79.082 2.733 79.082 2.733 79.082 z" fill="rgb(255,200,67)"/>
-			</g>
-		</svg>
-	`;
-	const openFolderWithFilesSvg = `
-		<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" xml:space="preserve">
-			<g transform="translate(1.4065934065934016 1.4065934065934016) scale(2.81 2.81)">
-				<path d="M 73.538 35.162 l -52.548 1.952 c -1.739 0 -2.753 0.651 -3.232 2.323 L 6.85 76.754 c -0.451 1.586 -2.613 2.328 -4.117 2.328 h 0 C 1.23 79.082 0 77.852 0 76.349 l 0 -10.458 V 23.046 v -2.047 v -6.273 c 0 -2.103 1.705 -3.808 3.808 -3.808 h 27.056 c 1.01 0 1.978 0.401 2.692 1.115 l 7.85 7.85 c 0.714 0.714 1.683 1.115 2.692 1.115 H 69.73 c 2.103 0 3.808 1.705 3.808 3.808 v 1.301 L 73.538 35.162 z" fill="rgb(224,173,49)"/>
-				<path d="M 63.726 14.605 v 54.54 c 0 1.386 -1.124 2.51 -2.51 2.51 H 13.02 c -1.386 0 -2.51 -1.124 -2.51 -2.51 V 2.51 c 0 -1.386 1.124 -2.51 2.51 -2.51 H 49.12 C 51.554 6.059 56.533 10.874 63.726 14.605 z" fill="rgb(233,233,224)"/>
-				<path d="M 63.726 14.605 H 51.407 c -1.263 0 -2.287 -1.024 -2.287 -2.287 V 0 L 63.726 14.605 z" fill="rgb(217,215,202)"/>
-				<path d="M 52.978 23.363 H 20.139 c -0.829 0 -1.5 -0.671 -1.5 -1.5 s 0.671 -1.5 1.5 -1.5 h 32.839 c 0.828 0 1.5 0.671 1.5 1.5 S 53.806 23.363 52.978 23.363 z" fill="rgb(217,215,202)"/>
-				<path d="M 52.978 30.363 H 20.139 c -0.829 0 -1.5 -0.671 -1.5 -1.5 s 0.671 -1.5 1.5 -1.5 h 32.839 c 0.828 0 1.5 0.671 1.5 1.5 S 53.806 30.363 52.978 30.363 z" fill="rgb(217,215,202)"/>
-				<path d="M 2.733 79.082 L 2.733 79.082 c 1.503 0 2.282 -1.147 2.733 -2.733 l 10.996 -38.362 c 0.479 -1.672 2.008 -2.824 3.748 -2.824 h 67.379 c 1.609 0 2.765 1.546 2.311 3.09 L 79.004 75.279 c -0.492 1.751 -1.571 3.818 -3.803 3.803 H 2.733 z" fill="rgb(255,200,67)"/>
-			</g>
-		</svg>
-	`;
-	const closedFolderSvg = `
-		<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" xml:space="preserve">
-			<g transform="translate(1.4065934065934016 1.4065934065934016) scale(2.81 2.81)">
-				<path d="M 0 68.798 v 11.914 c 0 1.713 1.401 3.114 3.114 3.114 h 0 c 3.344 0 4.805 -2.642 4.805 -2.642 L 8.14 29.281 l 2.739 -2.827 l 72.894 -2.977 v -1.482 c 0 -2.396 -1.942 -4.338 -4.338 -4.338 H 50.236 c -1.15 0 -2.254 -0.457 -3.067 -1.27 l -8.943 -8.943 c -0.813 -0.813 -1.917 -1.27 -3.067 -1.27 H 4.338 C 1.942 6.174 0 8.116 0 10.512 v 7.146 v 2.332 V 68.798" fill="rgb(224,173,49)"/>
-				<path d="M 3.114 83.826 L 3.114 83.826 c 1.713 0 3.114 -1.401 3.114 -3.114 V 27.81 c 0 -2.393 1.94 -4.333 4.333 -4.333 h 75.107 c 2.393 0 4.333 1.94 4.333 4.333 v 51.684 c 0 2.393 -1.94 4.333 -4.333 4.333 C 85.667 83.826 3.114 83.826 3.114 83.826 z" fill="rgb(255,200,67)"/>
-			</g>
-		</svg>
-	`;
-	const favoriteFolderSvg = `
-		<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="256" height="256" viewBox="0 0 256 256" xml:space="preserve">
-			<g transform="translate(1.4065934065934016 1.4065934065934016) scale(2.81 2.81)">
-				<path d="M 0 68.798 v 11.914 c 0 1.713 1.401 3.114 3.114 3.114 h 0 c 3.344 0 4.805 -2.642 4.805 -2.642 L 8.14 29.281 l 2.739 -2.827 l 72.894 -2.977 v -1.482 c 0 -2.396 -1.942 -4.338 -4.338 -4.338 H 50.236 c -1.15 0 -2.254 -0.457 -3.067 -1.27 l -8.943 -8.943 c -0.813 -0.813 -1.917 -1.27 -3.067 -1.27 H 4.338 C 1.942 6.174 0 8.116 0 10.512 v 7.146 v 2.332 V 68.798" fill="rgb(224,173,49)"/>
-				<path d="M 3.114 83.826 L 3.114 83.826 c 1.713 0 3.114 -1.401 3.114 -3.114 V 27.81 c 0 -2.393 1.94 -4.333 4.333 -4.333 h 75.107 c 2.393 0 4.333 1.94 4.333 4.333 v 51.684 c 0 2.393 -1.94 4.333 -4.333 4.333 C 85.667 83.826 3.114 83.826 3.114 83.826 z" fill="rgb(255,200,67)"/>
-				<path d="M 35.679 72.029 c -0.311 0 -0.62 -0.097 -0.882 -0.286 c -0.462 -0.336 -0.693 -0.904 -0.597 -1.468 l 1.997 -11.645 l -8.46 -8.246 c -0.409 -0.398 -0.556 -0.995 -0.38 -1.538 c 0.177 -0.543 0.646 -0.938 1.211 -1.021 l 11.692 -1.699 l 5.229 -10.595 c 0.253 -0.512 0.774 -0.836 1.345 -0.836 l 0 0 c 0.571 0 1.093 0.324 1.345 0.836 l 5.229 10.594 l 11.692 1.699 c 0.564 0.082 1.034 0.478 1.211 1.021 c 0.176 0.543 0.029 1.14 -0.38 1.538 l -8.461 8.246 l 1.998 11.645 c 0.097 0.563 -0.135 1.132 -0.597 1.468 c -0.464 0.336 -1.074 0.38 -1.58 0.114 l -10.457 -5.498 l -10.458 5.498 C 36.158 71.973 35.918 72.029 35.679 72.029 z M 32.008 50.357 l 6.848 6.676 c 0.354 0.345 0.515 0.841 0.432 1.328 l -1.617 9.426 l 8.465 -4.45 c 0.438 -0.229 0.96 -0.229 1.396 0 l 8.465 4.45 l -1.617 -9.426 c -0.083 -0.487 0.078 -0.983 0.432 -1.328 l 6.849 -6.676 l -9.465 -1.375 c -0.488 -0.071 -0.911 -0.378 -1.129 -0.82 l -4.232 -8.577 l -4.233 8.577 c -0.219 0.442 -0.641 0.749 -1.129 0.82 L 32.008 50.357 z" fill="rgb(184,53,53)"/>
-			</g>
-		</svg>
-	`;
-	const useFavoriteIcon = Boolean(isFavorite && (preferFavoriteIcon || !isOpen));
-	const effectiveHasFiles = isOpen && hasFiles;
-	let svg = closedFolderSvg;
-	if (useFavoriteIcon) {
-		svg = favoriteFolderSvg;
-	} else if (isOpen) {
-		svg = effectiveHasFiles ? openFolderWithFilesSvg : openFolderWithoutFilesSvg;
-	}
-	return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-function getFileTypeKey(document) {
-	if (document.isDirectory) {
-		return 'folder';
-	}
-	const mimeType = document.mimeType || '';
-	if (mimeType.includes('spreadsheet') || mimeType.includes('spreadsheetml') || mimeType.includes('ms-excel')) {
-		return 'spreadsheet';
-	}
-	if (mimeType.includes('presentation') || mimeType.includes('presentationml') || mimeType.includes('ms-powerpoint')) {
-		return 'presentation';
-	}
-	if (mimeType.includes('text') || mimeType.includes('csv') || mimeType.includes('wordprocessingml') || mimeType.includes('msword')) {
-		return 'text';
-	}
-	return 'default';
-}
-
-function buildFilePreviewSvg(document) {
-	const MIME_SVG_MAP = {
-		spreadsheet: `
-			<svg fill="#007C3C" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-			<title>LibreOffice Calc</title>
-			<path d="M9 13H7v-1h2v1zm6-3h-2v1h2v-1zm-6 0H7v1h2v-1zm3 0h-2v1h2v-1zm3-10 7 7V0h-7zM9 14H7v1h2v-1zm5 3h1v-3h-1v3zm2 0h1v-1h-1v1zm-4 0h1v-2h-1v2zm1-17 9 9v12c0 1.662-1.338 3-3 3H5c-1.662 0-3-1.338-3-3V3c0-1.662 1.338-3 3-3h8zm5 13h-7v5h7v-5zm-2-4H6v7h4.5v-1H10v-1h.5v-1H10v-1h2v.5h1V12h2v.5h1V9z"/>
-			</svg>
-		`,
-		text: `
-			<svg fill="#083FA6" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-			<title>LibreOffice Writer</title>
-            <path d="M22 0v7l-7-7h7zm0 9v12c0 1.662-1.338 3-3 3H5c-1.662 0-3-1.338-3-3V3c0-1.662 1.338-3 3-3h8l9 9zM6 10h5V9H6v1zm0 2h5v-1H6v1zm0 2h5v-1H6v1zm5 3H6v1h5v-1zm7-2H6v1h12v-1zm0-6h-6v5h6V9zm-1.5 2a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1zM14 11l-1 2h3l-2-2z"/>
-            </svg>
-		`,
-		presentation: `
-			<svg fill="#D0120D" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-			<title>LibreOffice Impress</title><path d="M22 0v7l-7-7h7zm-9 0 9 9v12c0 1.662-1.338 3-3 3H5c-1.662 0-3-1.338-3-3V3c0-1.662 1.338-3 3-3h8zM7 17H6v1h1v-1zm0-2H6v1h1v-1zm0-2H6v1h1v-1zm3 4H8v1h2v-1zm0-2H8v1h2v-1zm0-2H8v1h2v-1zm6-1v-1H8v1h8zm2 1h-7v5h7v-5zm0-4H6v1h12V9zm-4 6.707 1 1 2.207-2.207-.707-.707-1.5 1.5-1-1-2.207 2.207.707.707 1.5-1.5z"/>
-			</svg>
-		`,
-		default: `
-			<svg fill="#7324A9" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-			<title>LibreOffice Base</title><path d="M17 13h-1v-1h1v1zm0 1h-1v1h1v-1zm0 2h-1v1h1v-1zm-.6-16H15l7 7V0h-5.6zM13 0l9 9v12c0 1.662-1.338 3-3 3H5c-1.662 0-3-1.338-3-3V3c0-1.662 1.338-3 3-3h8zM6 11c0 .552 1.343 1 3 1s3-.448 3-1v-1c0-.552-1.343-1-3-1s-3 .448-3 1v1zm0 2c0 .552 1.343 1 3 1s3-.448 3-1v-1c0 .552-1.343 1-3 1s-3-.448-3-1v1zm0 2c0 .552 1.343 1 3 1s3-.448 3-1v-1c0 .552-1.343 1-3 1s-3-.448-3-1v1zm0 2c0 .552 1.343 1 3 1s3-.448 3-1v-1c0 .552-1.343 1-3 1s-3-.448-3-1v1zm12-6h-5v7h5v-7zm-3 1h-1v1h1v-1zm0 4h-1v1h1v-1zm0-2h-1v1h1v-1z"/>
-			</svg>
-		`
-	};
-	const typeKey = getFileTypeKey(document);
-	const svg = MIME_SVG_MAP[typeKey];
-	return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-function renderDocumentRow(document, depth) {
-	const isSelected = appState.selectedFileIds.has(document.id);
-	const isFolder = isFolderEntry(document);
-	const isExpanded = isFolder && appState.expandedFolderIds.has(document.id);
-	const previewUrl = isFolder
-		? buildFolderPictogramSvg({
-			isOpen: isExpanded,
-			hasFiles: folderContainsFiles(document),
-			isFavorite: Boolean(document.favorite),
-			preferFavoriteIcon: false
-		})
-		: buildFilePreviewSvg(document);
-	const toggleLabel = isExpanded ? 'Collapse folder' : 'Expand folder';
-	return `
-		<tr class="${isSelected ? 'selected-row' : ''} ${isFolder ? 'tree-folder-row' : 'tree-file-row'}" data-file-id="${document.id}" data-tree-depth="${depth}" data-is-folder="${isFolder}">
-			<td class="select-cell">
-				<input type="checkbox" class="file-select-checkbox" data-file-id="${document.id}" ${isSelected ? 'checked' : ''} aria-label="Select ${escapeHtml(document.name)}">
-			</td>
-			<td class="tree-name-cell">
-				<div class="file-row-main tree-row-main" style="padding-left: ${depth * 2.95}rem">
-					${isFolder ? `<button type="button" class="tree-toggle" data-action="toggle-folder" data-file-id="${document.id}" aria-label="${toggleLabel}" aria-expanded="${isExpanded ? 'true' : 'false'}">${isExpanded ? '▾' : '▸'}</button>` : '<span class="tree-toggle-spacer" aria-hidden="true"></span>'}
-					<img class="file-row-preview ${isFolder ? 'folder-icon' : ''}" src="${previewUrl}" alt="${escapeHtml(document.name)} preview">
-					<div>
-						<div class="file-name">${escapeHtml(document.name)}</div>
-					</div>
-				</div>
-			</td>
-			<td>${escapeHtml(document.relativePath.split('/').filter(Boolean).join(' / '))}</td>
-			<td>${formatDate(document.updatedAt)}</td>
-			<td>${isFolder ? '—' : formatBytes(document.size)}</td>
-			<td>
-				<div class="actions actions-inline">
-					${isFolder ? '' : '<button type="button" data-action="open" data-mode="edit" data-file-id="'+document.id+'">Open</button><button type="button" class="secondary" data-action="open" data-mode="view" data-file-id="'+document.id+'">View</button>'}
-					<button type="button" class="secondary menu-button" data-action="context-menu" data-file-id="${document.id}" aria-label="Open file actions">⋯</button>
-				</div>
-			</td>
-		</tr>
-	`;
-}
-
-function renderFlatDocuments(documents) {
-	if (documents.length === 0) {
-		renderEmptyState('No matching documents or folders found.');
-		return;
-	}
-
-	elements.documentsBody.innerHTML = documents.map((document) => renderDocumentRow(document, 0)).join('');
-	wireDocumentRows();
-	appState.visibleDocuments = documents;
-	updateBulkActionState(documents);
-}
-
-function renderTreeDocuments(documents) {
-	const visibleEntries = getVisibleTreeEntries(documents, appState.expandedFolderIds);
-	if (visibleEntries.length === 0) {
-		renderEmptyState();
-		return;
-	}
-
-	elements.documentsBody.innerHTML = visibleEntries.map(({ document, depth }) => renderDocumentRow(document, depth)).join('');
-	wireDocumentRows();
-	appState.visibleDocuments = visibleEntries.map(({ document }) => document);
-	updateBulkActionState(appState.visibleDocuments);
-}
-
-function wireDocumentRows() {
-	for (const checkbox of elements.documentsBody.querySelectorAll('.file-select-checkbox')) {
-		checkbox.addEventListener('change', function(event) {
-			event.stopPropagation();
-			toggleDocumentSelection(event.target.dataset.fileId, event.target.checked);
-		});
-	}
-
-	for (const row of elements.documentsBody.querySelectorAll('tr[data-file-id]')) {
-		row.addEventListener('click', function(event) {
-			if (event.target.closest('button, input, a, select, textarea, label')) {
-				return;
-			}
-
-			const document = getDocumentById(row.dataset.fileId);
-			if (document?.isDirectory) {
-				toggleFolderExpansion(document.id);
-				renderCurrentDocumentList();
-			}
-		});
-	}
-
-	for (const button of elements.documentsBody.querySelectorAll('button[data-action][data-file-id]')) {
-		button.addEventListener('click', function(event) {
-			event.preventDefault();
-			event.stopPropagation();
-			if (button.dataset.action === 'context-menu') {
-				showContextMenu(button.dataset.fileId, button);
-				return;
-			}
-			if (button.dataset.action === 'toggle-folder') {
-				toggleFolderExpansion(button.dataset.fileId);
-				renderCurrentDocumentList();
-				return;
-			}
-			if (button.dataset.action === 'open') {
-				handleFileAction('open', button.dataset.fileId, button.dataset.mode);
-				return;
-			}
-			handleFileAction(button.dataset.action, button.dataset.fileId, button.dataset.mode);
-		});
-	}
-}
-
-function renderCurrentDocumentList() {
-	const query = elements.searchInput.value.trim().toLowerCase();
-	if (query) {
-		const filtered = appState.documents.filter((document) => (
-			document.name.toLowerCase().includes(query) ||
-			document.relativePath.toLowerCase().includes(query) ||
-			String(document.mimeType || '').toLowerCase().includes(query)
-		));
-		renderFlatDocuments(filtered);
-		return;
-	}
-
-	renderTreeDocuments(appState.documents);
-}
+const uploadController = createUploadController({
+	elements: elements,
+	appState: appState,
+	getUploadSummaryLabel: getUploadSummaryLabel,
+	normalizeUploadRelativePath: normalizeUploadRelativePath,
+	buildUploadDestinationPath: buildUploadDestinationPath,
+	collectDroppedUploadItems: collectDroppedUploadItems,
+	escapeHtml: escapeHtml,
+	formatBytes: formatBytes,
+	setStatus: setStatus,
+	loadPage: async function() {
+		await loadPage();
+	},
+	onCloseOpenContextMenu: closeOpenContextMenu
+});
 
 function getDocumentById(fileId) {
 	return appState.documents.find((document) => document.id === fileId) || null;
@@ -1066,14 +636,14 @@ async function handleDetailsAction(action, fileId) {
 				setStatus('Folders cannot be previewed.', true);
 				return;
 			}
-			await openDocument(fileId, 'view');
+			await viewerSessionController.openDocument(fileId, 'view');
 			return;
 		case 'details-open':
 			if (isFolderEntry(document)) {
 				setStatus('Folders cannot be opened in Collabora.', true);
 				return;
 			}
-			await openDocument(fileId, 'edit');
+			await viewerSessionController.openDocument(fileId, 'edit');
 			return;
 		case 'details-share':
 			if (isFolderEntry(document)) {
@@ -1113,7 +683,7 @@ async function handleDetailsAction(action, fileId) {
 
 function showBulkActionsMenu(button) {
 	closeOpenContextMenu();
-	const selectedDocuments = getBulkSelectedDocuments();
+	const selectedDocuments = documentListController.getBulkSelectedDocuments();
 	if (!selectedDocuments.length) {
 		return;
 	}
@@ -1151,7 +721,7 @@ function toggleBulkActionsMenu(button) {
 }
 
 async function handleBulkAction(action) {
-	const selectedDocuments = getBulkSelectedDocuments();
+	const selectedDocuments = documentListController.getBulkSelectedDocuments();
 	if (!selectedDocuments.length) {
 		return;
 	}
@@ -1198,7 +768,7 @@ async function handleVersionAction(action, fileId, versionId) {
 		case 'version-view': {
 			const language = navigator.language || 'en-US';
 			const payload = await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}/view?lang=${encodeURIComponent(language)}`);
-			submitLaunchPayload(payload);
+			viewerSessionController.submitLaunchPayload(payload);
 			return;
 		}
 		case 'version-name-current': {
@@ -1334,328 +904,8 @@ async function showConflictDialog(conflict, operationLabel) {
 	});
 }
 
-async function requestJson(url, options = {}) {
-	const response = await fetch(url, options);
-	let payload;
-
-	try {
-		payload = await response.json();
-	} catch (error) {
-		payload = null;
-	}
-
-	if (!response.ok) {
-		const message = payload?.error ?? `Request failed with status ${response.status}.`;
-		const error = new Error(message);
-		error.status = response.status;
-		error.payload = payload;
-		throw error;
-	}
-
-	return payload;
-}
-
-function renderAuthControls() {
-	const authenticated = Boolean(appState.auth?.authenticated);
-	const role = appState.auth?.user?.role || 'user';
-	const currentContext = appState.auth?.storageContext || 'shared';
-
-	elements.loginButton.classList.toggle('hidden', authenticated);
-	elements.logoutButton.classList.toggle('hidden', !authenticated);
-	elements.accountButton.classList.toggle('hidden', !authenticated);
-	elements.adminButton.classList.toggle('hidden', !(authenticated && role === 'admin'));
-	elements.myFilesButton.classList.toggle('hidden', !authenticated);
-	elements.sharedFilesButton.classList.toggle('hidden', !authenticated);
-	elements.myFilesButton.disabled = !authenticated || currentContext === 'personal';
-	elements.sharedFilesButton.disabled = !authenticated || currentContext === 'shared';
-}
-
-function applyPasswordPolicyToForms(minLength) {
-	const effectiveMinLength = Number.isInteger(minLength) && minLength > 0 ? minLength : 12;
-	elements.accountNewPassword.minLength = effectiveMinLength;
-	elements.adminCreatePassword.minLength = effectiveMinLength;
-	elements.accountNewPassword.placeholder = `At least ${effectiveMinLength} characters`;
-	elements.adminCreatePassword.placeholder = `At least ${effectiveMinLength} characters`;
-}
-
-async function refreshAuthState() {
-	appState.auth = await requestJson('/api/auth/me');
-	renderAuthControls();
-}
-
-function openModal(modalElement) {
-	modalElement.classList.remove('hidden');
-	modalElement.setAttribute('aria-hidden', 'false');
-}
-
-function closeModal(modalElement) {
-	modalElement.classList.add('hidden');
-	modalElement.setAttribute('aria-hidden', 'true');
-}
-
-function openLoginModal() {
-	elements.loginForm.reset();
-	openModal(elements.loginModal);
-	elements.loginUsername.focus();
-}
-
-async function submitLoginForm(event) {
-	event.preventDefault();
-	const username = elements.loginUsername.value.trim();
-	const password = elements.loginPassword.value;
-	if (!username || !password) {
-		setStatus('Username and password are required.', true);
-		return;
-	}
-	await requestJson('/api/auth/login', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ username: username, password: password })
-	});
-	closeModal(elements.loginModal);
-	await loadPage();
-	if (appState.auth?.user?.must_change_password) {
-		openAccountModal();
-		setStatus('Please change your password now.', true);
-	}
-}
-
-async function logoutCurrentUser() {
-	await requestJson('/api/auth/logout', { method: 'POST' });
-	await closeViewer();
-	await loadPage();
-}
-
-async function switchStorageContext(context) {
-	await requestJson('/api/auth/storage-context', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ context: context })
-	});
-	await loadPage();
-}
-
-function openAccountModal() {
-	elements.accountForm.reset();
-	openModal(elements.accountModal);
-	elements.accountCurrentPassword.focus();
-}
-
-async function submitAccountForm(event) {
-	event.preventDefault();
-	const currentPassword = elements.accountCurrentPassword.value;
-	const newPassword = elements.accountNewPassword.value;
-	if (!currentPassword || !newPassword) {
-		setStatus('Current and new password are required.', true);
-		return;
-	}
-	await requestJson('/api/auth/change-password', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			currentPassword: currentPassword,
-			newPassword: newPassword
-		})
-	});
-	closeModal(elements.accountModal);
-	setStatus('Password updated.');
-	await refreshAuthState();
-}
-
-function renderAdminUsers() {
-	elements.adminUsersBody.innerHTML = '';
-	if (appState.adminUsers.length === 0) {
-		const row = document.createElement('tr');
-		const cell = document.createElement('td');
-		cell.colSpan = 5;
-		cell.textContent = 'No users found.';
-		row.appendChild(cell);
-		elements.adminUsersBody.appendChild(row);
-		return;
-	}
-
-	for (const user of appState.adminUsers) {
-		const row = document.createElement('tr');
-		const usernameCell = document.createElement('td');
-		usernameCell.textContent = user.username;
-		const roleCell = document.createElement('td');
-		roleCell.textContent = user.role;
-		const statusCell = document.createElement('td');
-		statusCell.textContent = user.active ? 'active' : 'disabled';
-		const createdCell = document.createElement('td');
-		createdCell.textContent = formatDate(user.created_at);
-		const actionsCell = document.createElement('td');
-		const actionContainer = document.createElement('div');
-		actionContainer.className = 'admin-user-actions';
-
-		const toggleButton = document.createElement('button');
-		toggleButton.type = 'button';
-		toggleButton.className = 'secondary';
-		toggleButton.textContent = user.active ? 'Disable' : 'Enable';
-		toggleButton.addEventListener('click', async function() {
-			try {
-				await requestJson(`/api/admin/users/${encodeURIComponent(user.id)}`, {
-					method: 'PATCH',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ active: !user.active })
-				});
-				await loadAdminUsers();
-			} catch (error) {
-				setStatus(error.message, true);
-			}
-		});
-
-		const resetButton = document.createElement('button');
-		resetButton.type = 'button';
-		resetButton.className = 'secondary';
-		resetButton.textContent = 'Reset password';
-		resetButton.addEventListener('click', async function() {
-			try {
-				const payload = await requestJson(`/api/admin/users/${encodeURIComponent(user.id)}/reset-password`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ generatePassword: true })
-				});
-				const generated = payload.generatedPassword ? `New password (show once): ${payload.generatedPassword}` : 'Password reset.';
-				elements.adminGeneratedPassword.textContent = generated;
-				elements.adminGeneratedPassword.classList.remove('hidden');
-			} catch (error) {
-				setStatus(error.message, true);
-			}
-		});
-
-		const deleteButton = document.createElement('button');
-		deleteButton.type = 'button';
-		deleteButton.className = 'danger';
-		deleteButton.textContent = 'Delete';
-		deleteButton.disabled = appState.auth?.user?.id === user.id;
-		deleteButton.addEventListener('click', async function() {
-			try {
-				await requestJson(`/api/admin/users/${encodeURIComponent(user.id)}`, { method: 'DELETE' });
-				await loadAdminUsers();
-			} catch (error) {
-				setStatus(error.message, true);
-			}
-		});
-
-		actionContainer.append(toggleButton, resetButton, deleteButton);
-		actionsCell.appendChild(actionContainer);
-		row.append(usernameCell, roleCell, statusCell, createdCell, actionsCell);
-		elements.adminUsersBody.appendChild(row);
-	}
-}
-
-async function loadAdminUsers() {
-	const payload = await requestJson('/api/admin/users');
-	appState.adminUsers = payload.users || [];
-	renderAdminUsers();
-}
-
-async function openAdminUserManagement() {
-	elements.adminGeneratedPassword.textContent = '';
-	elements.adminGeneratedPassword.classList.add('hidden');
-	elements.adminCreateUserForm.reset();
-	elements.adminCreateGeneratePassword.checked = true;
-	elements.adminCreatePassword.disabled = true;
-	await loadAdminUsers();
-	openModal(elements.adminModal);
-}
-
-async function submitAdminCreateUserForm(event) {
-	event.preventDefault();
-	const username = elements.adminCreateUsername.value.trim();
-	const role = elements.adminCreateRole.value === 'admin' ? 'admin' : 'user';
-	const generate = elements.adminCreateGeneratePassword.checked;
-	const password = elements.adminCreatePassword.value;
-	if (!username) {
-		setStatus('Username is required.', true);
-		return;
-	}
-	if (!generate && !password) {
-		setStatus('Password is required if generation is disabled.', true);
-		return;
-	}
-	const payload = await requestJson('/api/admin/users', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			username: username,
-			role: role,
-			generatePassword: generate,
-			password: generate ? undefined : password
-		})
-	});
-	elements.adminGeneratedPassword.textContent = payload.generatedPassword
-		? `Initial password (show once): ${payload.generatedPassword}`
-		: 'User created.';
-	elements.adminGeneratedPassword.classList.remove('hidden');
-	elements.adminCreateUserForm.reset();
-	elements.adminCreateGeneratePassword.checked = true;
-	elements.adminCreatePassword.disabled = true;
-	await loadAdminUsers();
-}
-
 function applySearchFilter() {
-	renderCurrentDocumentList();
-}
-
-function submitLaunchPayload(payload) {
-	elements.collaboraForm.action = payload.actionUrl;
-	elements.accessToken.value = payload.accessToken;
-	elements.accessTokenTtl.value = String(payload.accessTokenTtl);
-	elements.viewerTitle.textContent = `${payload.file.name} (${payload.mode})`;
-	elements.viewerSubtitle.textContent = payload.file.relativePath;
-	appState.viewerPanelWidth = DEFAULT_VIEWER_WIDTH;
-	appState.viewerOpen = true;
-	syncViewerLayout();
-	setViewerMode(payload.mode);
-	elements.collaboraForm.requestSubmit();
-}
-
-function isShareSessionPath() {
-	return window.location.pathname.startsWith('/share/');
-}
-
-function setViewerMode(mode) {
-	const isShareSession = isShareSessionPath();
-	const isFullscreenMode = isShareSession || mode === 'edit';
-	document.body.classList.toggle('share-session', isShareSession);
-	document.body.classList.toggle('editor-fullscreen', isFullscreenMode);
-	if (isShareSession) {
-		elements.closeViewerButton.classList.add('hidden');
-		elements.closeViewerButton.setAttribute('aria-label', 'Close shared document');
-		return;
-	}
-	elements.closeViewerButton.classList.toggle('hidden', !appState.viewerOpen);
-	elements.closeViewerButton.setAttribute('aria-label', 'Close document');
-}
-
-async function closeViewer() {
-	document.body.classList.remove('editor-fullscreen');
-	if (isShareSessionPath()) {
-		document.body.classList.add('share-session');
-		elements.closeViewerButton.classList.add('hidden');
-		try {
-			window.close();
-		} catch (error) {
-			// Browsers may block programmatic tab-closing; fall back to the blank share state.
-		}
-		elements.viewerTitle.textContent = DEFAULT_VIEWER_TITLE;
-		elements.viewerSubtitle.textContent = DEFAULT_VIEWER_SUBTITLE;
-		elements.viewerFrame.src = 'about:blank';
-		setStatus('Share session closed.');
-		return;
-	}
-	document.body.classList.remove('share-session');
-	appState.viewerOpen = false;
-	syncViewerLayout();
-	elements.closeViewerButton.classList.add('hidden');
-	elements.viewerTitle.textContent = DEFAULT_VIEWER_TITLE;
-	elements.viewerSubtitle.textContent = DEFAULT_VIEWER_SUBTITLE;
-	elements.viewerFrame.src = 'about:blank';
-	window.history.replaceState(null, '', '/');
-	await loadPage();
-	setStatus('Closed document.');
+	documentListController.renderCurrentDocumentList();
 }
 
 async function loadPage() {
@@ -1672,28 +922,15 @@ async function loadPage() {
 		appState.documents = fileList.documents;
 		syncDetailThumbnailCacheWithDocuments();
 		appState.auth.storageContext = config.storageContext || appState.auth.storageContext || 'shared';
-		applyPasswordPolicyToForms(config.passwordMinLength);
-		renderAuthControls();
+		authController.applyPasswordPolicyToForms(config.passwordMinLength);
+		authController.renderAuthControls();
 		elements.documentRoot.textContent = config.documentRoot;
 		elements.appBaseUrl.textContent = config.appBaseUrl;
 		elements.collaboraUrl.textContent = config.collaboraPublicUrl;
-		renderCurrentDocumentList();
+		documentListController.renderCurrentDocumentList();
 		setStatus(`Loaded ${fileList.documents.length} entr${fileList.documents.length === 1 ? 'y' : 'ies'}.`);
 	} catch (error) {
-		renderEmptyState();
-		setStatus(error.message, true);
-	}
-}
-
-async function openDocument(fileId, mode) {
-	setStatus('Preparing Collabora launch...');
-	try {
-		const language = navigator.language || 'en-US';
-		const payload = await requestJson(`/api/files/${encodeURIComponent(fileId)}/launch?lang=${encodeURIComponent(language)}&mode=${encodeURIComponent(mode)}`);
-		submitLaunchPayload(payload);
-		setStatus(`Opened ${payload.file.name} in ${payload.mode} mode.`);
-		await loadPage();
-	} catch (error) {
+		documentListController.renderEmptyState();
 		setStatus(error.message, true);
 	}
 }
@@ -2058,7 +1295,7 @@ async function submitFolderTargetDialog(event) {
 					mode: 'edit'
 				})
 			});
-			submitLaunchPayload(payload);
+			viewerSessionController.submitLaunchPayload(payload);
 			await loadPage();
 			closeFolderTargetDialog();
 			setStatus(`Created and opened ${payload.file.name}.`);
@@ -2145,259 +1382,6 @@ async function submitFolderTargetDialog(event) {
 				: (action === 'move' ? 'Entry moved.' : 'Entry copied.'));
 			return;
 		}
-	}
-}
-
-function renderUploadDialog() {
-	const uploadCount = appState.uploadItems.length;
-	elements.uploadTargetLabel.textContent = getUploadTargetLabel();
-	elements.uploadSelectionSummary.textContent = getUploadSummaryLabel(uploadCount);
-	elements.uploadConfirm.disabled = uploadCount === 0 || appState.uploadBusy;
-	elements.uploadChooseButton.disabled = appState.uploadBusy;
-	elements.uploadCancel.disabled = appState.uploadBusy;
-	elements.uploadConfirm.textContent = appState.uploadBusy ? 'Uploading...' : 'Upload';
-	elements.uploadDropzone.classList.toggle('drag-active', appState.uploadDragActive);
-	elements.uploadDropzone.classList.toggle('is-busy', appState.uploadBusy);
-
-	if (uploadCount === 0) {
-		elements.uploadSelectionList.innerHTML = '<li class="upload-list-empty">Choose files or drop them here.</li>';
-	} else {
-		elements.uploadSelectionList.innerHTML = appState.uploadItems.map((item) => `
-			<li class="upload-selection-item">
-				<strong>${escapeHtml(item.relativePath)}</strong>
-				<span>${formatBytes(item.file.size)}</span>
-			</li>
-		`).join('');
-	}
-
-	if (appState.uploadErrors.length === 0) {
-		elements.uploadErrors.classList.add('hidden');
-		elements.uploadErrors.innerHTML = '';
-		return;
-	}
-
-	elements.uploadErrors.classList.remove('hidden');
-	elements.uploadErrors.innerHTML = `
-		<strong>Upload problems</strong>
-		<ul>
-			${appState.uploadErrors.map((entry) => `<li>${escapeHtml(entry.relativePath ? `${entry.relativePath}: ${entry.message}` : entry.message)}</li>`).join('')}
-		</ul>
-	`;
-}
-
-function openUploadDialog(targetDirectory = '') {
-	closeOpenContextMenu();
-	appState.uploadTargetDirectory = targetDirectory || '';
-	appState.uploadItems = [];
-	appState.uploadErrors = [];
-	appState.uploadBusy = false;
-	appState.uploadDragActive = false;
-	elements.uploadFileInput.value = '';
-	elements.uploadModalTitle.textContent = appState.uploadTargetDirectory ? 'Upload to folder' : 'Upload to root folder';
-	elements.uploadModal.classList.remove('hidden');
-	elements.uploadModal.setAttribute('aria-hidden', 'false');
-	renderUploadDialog();
-	elements.uploadChooseButton.focus();
-}
-
-function closeUploadDialog() {
-	if (appState.uploadBusy) {
-		return;
-	}
-
-	appState.uploadTargetDirectory = '';
-	appState.uploadItems = [];
-	appState.uploadErrors = [];
-	appState.uploadBusy = false;
-	appState.uploadDragActive = false;
-	elements.uploadFileInput.value = '';
-	elements.uploadModal.classList.add('hidden');
-	elements.uploadModal.setAttribute('aria-hidden', 'true');
-}
-
-function appendUploadItems(items) {
-	const normalizedItems = items
-		.map((item) => ({
-			file: item.file,
-			relativePath: normalizeUploadRelativePath(item.relativePath || item.file?.webkitRelativePath || item.file?.name)
-		}))
-		.filter((item) => item.file && item.relativePath);
-
-	if (normalizedItems.length === 0) {
-		appState.uploadErrors = [{ relativePath: '', message: 'The dropped items did not contain any files.' }];
-		renderUploadDialog();
-		return;
-	}
-
-	appState.uploadItems = appState.uploadItems.concat(normalizedItems);
-	appState.uploadErrors = [];
-	renderUploadDialog();
-}
-
-function readFileSystemEntry(entry, relativePath) {
-	if (entry.isFile) {
-		return new Promise((resolve, reject) => {
-			entry.file((file) => {
-				resolve([{
-					file: file,
-					relativePath: relativePath
-				}]);
-			}, reject);
-		});
-	}
-
-	if (!entry.isDirectory) {
-		return Promise.resolve([]);
-	}
-
-	return readDirectoryEntries(entry).then(async function(entries) {
-		let collectedItems = [];
-		for (const childEntry of entries) {
-			const childPath = relativePath ? `${relativePath}/${childEntry.name}` : childEntry.name;
-			collectedItems = collectedItems.concat(await readFileSystemEntry(childEntry, childPath));
-		}
-		return collectedItems;
-	});
-}
-
-function readDirectoryEntries(directoryEntry) {
-	const reader = directoryEntry.createReader();
-	const entries = [];
-
-	return new Promise((resolve, reject) => {
-		function readNextBatch() {
-			reader.readEntries(function(batch) {
-				if (!batch.length) {
-					resolve(entries);
-					return;
-				}
-				entries.push(...batch);
-				readNextBatch();
-			}, reject);
-		}
-
-		readNextBatch();
-	});
-}
-
-async function collectDroppedUploadItems(dataTransfer) {
-	if (dataTransfer.items && dataTransfer.items.length > 0) {
-		const fileItems = Array.from(dataTransfer.items).filter((item) => item.kind === 'file');
-		const entries = fileItems
-			.map((item) => item.webkitGetAsEntry ? item.webkitGetAsEntry() : null)
-			.filter(Boolean);
-		if (entries.length > 0) {
-			let collectedItems = [];
-			for (const entry of entries) {
-				collectedItems = collectedItems.concat(await readFileSystemEntry(entry, entry.name));
-			}
-			return collectedItems;
-		}
-	}
-
-	return Array.from(dataTransfer.files || []).map((file) => ({
-		file: file,
-		relativePath: file.webkitRelativePath || file.name
-	}));
-}
-
-function handleUploadFileSelection(files) {
-	const selectedFiles = Array.from(files || []);
-	if (selectedFiles.length === 0) {
-		return;
-	}
-
-	appendUploadItems(selectedFiles.map((file) => ({
-		file: file,
-		relativePath: file.webkitRelativePath || file.name
-	})));
-}
-
-async function handleUploadDrop(event) {
-	event.preventDefault();
-	if (appState.uploadBusy) {
-		return;
-	}
-
-	appState.uploadDragActive = false;
-	try {
-		const items = await collectDroppedUploadItems(event.dataTransfer);
-		appendUploadItems(items);
-	} catch (error) {
-		appState.uploadErrors = [{ relativePath: '', message: error.message }];
-		renderUploadDialog();
-	}
-}
-
-async function submitUploadDialog() {
-	if (appState.uploadBusy || appState.uploadItems.length === 0) {
-		return;
-	}
-
-	let shouldCloseUploadDialog = false;
-	appState.uploadBusy = true;
-	appState.uploadErrors = [];
-	renderUploadDialog();
-
-	try {
-		const formData = new FormData();
-		formData.append('directory', appState.uploadTargetDirectory);
-		formData.append('relativePaths', JSON.stringify(appState.uploadItems.map((item) => item.relativePath)));
-		for (const item of appState.uploadItems) {
-			formData.append('files', item.file, item.file.name);
-		}
-
-		const response = await fetch('/api/uploads', {
-			method: 'POST',
-			body: formData
-		});
-		const payload = await response.json().catch(() => null);
-
-		if (!response.ok) {
-			throw new Error(payload?.error ?? `Request failed with status ${response.status}.`);
-		}
-
-		const uploadedFiles = Array.isArray(payload?.files) ? payload.files : [];
-		const uploadErrors = Array.isArray(payload?.errors) ? payload.errors : [];
-		const uploadedPaths = new Set(uploadedFiles.map((entry) => entry.relativePath));
-		appState.uploadItems = appState.uploadItems.filter((item) => !uploadedPaths.has(buildUploadDestinationPath(item.relativePath, appState.uploadTargetDirectory)));
-
-		if (uploadedFiles.length > 0) {
-			await loadPage();
-		}
-
-		if (uploadErrors.length === 0 && uploadedFiles.length > 0) {
-			shouldCloseUploadDialog = true;
-			setStatus(`Uploaded ${uploadedFiles.length} file${uploadedFiles.length === 1 ? '' : 's'}.`);
-			return;
-		}
-
-		appState.uploadErrors = uploadErrors.map((entry) => ({
-			relativePath: entry.relativePath || '',
-			message: entry.message || 'Upload failed.'
-		}));
-		if (appState.uploadErrors.length === 0) {
-			appState.uploadErrors = [{ relativePath: '', message: 'No files were uploaded.' }];
-		}
-		setStatus(
-			uploadedFiles.length > 0
-				? `Uploaded ${uploadedFiles.length} file${uploadedFiles.length === 1 ? '' : 's'}; some items were skipped.`
-				: 'Upload completed with errors.',
-			true
-		);
-	} catch (error) {
-		appState.uploadErrors = [{
-			relativePath: '',
-			message: error.message
-		}];
-		setStatus(error.message, true);
-	} finally {
-		appState.uploadBusy = false;
-		if (shouldCloseUploadDialog) {
-			closeUploadDialog();
-			return;
-		}
-		renderUploadDialog();
 	}
 }
 
@@ -2680,7 +1664,7 @@ async function handleContextMenuAction(action, fileId) {
 			openDetailsPanel(fileId);
 			return;
 		case 'upload':
-			openUploadDialog(documentEntry?.relativePath || '');
+			uploadController.openUploadDialog(documentEntry?.relativePath || '');
 			return;
 		case 'new-document':
 			return;
@@ -2730,7 +1714,7 @@ async function handleFileAction(action, fileId, mode) {
 	try {
 		switch (action) {
 			case 'open':
-				await openDocument(fileId, mode || 'edit');
+				await viewerSessionController.openDocument(fileId, mode || 'edit');
 				return;
 			case 'details':
 				openDetailsPanel(fileId);
@@ -2761,24 +1745,6 @@ async function handleFileAction(action, fileId, mode) {
 		setStatus('Action completed.');
 	} catch (error) {
 		setStatus(error.message, true);
-	}
-}
-
-async function maybeLaunchPublicShare() {
-	const pathMatch = window.location.pathname.match(/^\/share\/([^/]+)$/);
-	if (!pathMatch) {
-		return false;
-	}
-
-	setStatus('Loading public share...');
-	try {
-		const payload = await requestJson(`/api/shares/${encodeURIComponent(pathMatch[1])}/launch?lang=${encodeURIComponent(navigator.language || 'en-US')}`);
-		submitLaunchPayload(payload);
-		setStatus(`Opened share ${payload.file.name}.`);
-		return true;
-	} catch (error) {
-		setStatus(error.message, true);
-		return true;
 	}
 }
 
@@ -2828,36 +1794,36 @@ function toggleNewDocumentMenu(button) {
 	showNewDocumentMenu(button);
 }
 
-elements.layoutSplitter.addEventListener('pointerdown', startViewerResize);
-document.addEventListener('pointermove', updateViewerResize);
-document.addEventListener('pointerup', stopViewerResize);
-document.addEventListener('pointercancel', stopViewerResize);
-window.addEventListener('resize', syncViewerLayout);
+elements.layoutSplitter.addEventListener('pointerdown', viewerLayoutController.startViewerResize);
+document.addEventListener('pointermove', viewerLayoutController.updateViewerResize);
+document.addEventListener('pointerup', viewerLayoutController.stopViewerResize);
+document.addEventListener('pointercancel', viewerLayoutController.stopViewerResize);
+window.addEventListener('resize', viewerLayoutController.syncViewerLayout);
 
 elements.refreshButton.addEventListener('click', loadPage);
 elements.loginButton.addEventListener('click', function() {
-	openLoginModal();
+	authController.openLoginModal();
 });
 elements.logoutButton.addEventListener('click', function() {
-	logoutCurrentUser().catch(function(error) {
+	authController.logoutCurrentUser().catch(function(error) {
 		setStatus(error.message, true);
 	});
 });
 elements.myFilesButton.addEventListener('click', function() {
-	switchStorageContext('personal').catch(function(error) {
+	authController.switchStorageContext('personal').catch(function(error) {
 		setStatus(error.message, true);
 	});
 });
 elements.sharedFilesButton.addEventListener('click', function() {
-	switchStorageContext('shared').catch(function(error) {
+	authController.switchStorageContext('shared').catch(function(error) {
 		setStatus(error.message, true);
 	});
 });
 elements.accountButton.addEventListener('click', function() {
-	openAccountModal();
+	authController.openAccountModal();
 });
 elements.adminButton.addEventListener('click', function() {
-	openAdminUserManagement().catch(function(error) {
+	authController.openAdminUserManagement().catch(function(error) {
 		setStatus(error.message, true);
 	});
 });
@@ -2869,7 +1835,7 @@ toggleNewDocumentMenu(elements.newMenuButton);
 elements.uploadButton.addEventListener('click', function(event) {
 event.preventDefault();
 event.stopPropagation();
-openUploadDialog('');
+uploadController.openUploadDialog('');
 });
 elements.bulkActionsMenuButton.addEventListener('click', function(event) {
 event.preventDefault();
@@ -2878,7 +1844,7 @@ toggleBulkActionsMenu(elements.bulkActionsMenuButton);
 });
 elements.searchInput.addEventListener('input', applySearchFilter);
 elements.closeViewerButton.addEventListener('click', function() {
-closeViewer();
+viewerSessionController.closeViewer();
 });
 elements.folderPickerCancel.addEventListener('click', closeFolderTargetDialog);
 elements.folderPickerForm.addEventListener('submit', submitFolderTargetDialog);
@@ -2897,7 +1863,7 @@ if (appState.uploadBusy) {
 elements.uploadFileInput.click();
 });
 elements.uploadFileInput.addEventListener('change', function(event) {
-handleUploadFileSelection(event.target.files);
+uploadController.handleUploadFileSelection(event.target.files);
 event.target.value = '';
 });
 elements.uploadDropzone.addEventListener('click', function() {
@@ -2920,56 +1886,54 @@ event.preventDefault();
 if (appState.uploadBusy) {
 	return;
 }
-appState.uploadDragActive = true;
-renderUploadDialog();
+uploadController.setUploadDragActive(true);
 });
 elements.uploadDropzone.addEventListener('dragleave', function(event) {
 if (elements.uploadDropzone.contains(event.relatedTarget)) {
 	return;
 }
-appState.uploadDragActive = false;
-renderUploadDialog();
+uploadController.setUploadDragActive(false);
 });
-elements.uploadDropzone.addEventListener('drop', handleUploadDrop);
-elements.uploadCancel.addEventListener('click', closeUploadDialog);
-elements.uploadConfirm.addEventListener('click', submitUploadDialog);
+elements.uploadDropzone.addEventListener('drop', uploadController.handleUploadDrop);
+elements.uploadCancel.addEventListener('click', uploadController.closeUploadDialog);
+elements.uploadConfirm.addEventListener('click', uploadController.submitUploadDialog);
 elements.uploadModal.addEventListener('click', function(event) {
 if (event.target === elements.uploadModal) {
-	closeUploadDialog();
+	uploadController.closeUploadDialog();
 }
 });
 elements.loginCancel.addEventListener('click', function() {
-	closeModal(elements.loginModal);
+	authController.closeModal(elements.loginModal);
 });
 elements.loginForm.addEventListener('submit', function(event) {
-	submitLoginForm(event).catch(function(error) {
+	authController.submitLoginForm(event).catch(function(error) {
 		setStatus(error.message, true);
 	});
 });
 elements.loginModal.addEventListener('click', function(event) {
 	if (event.target === elements.loginModal) {
-		closeModal(elements.loginModal);
+		authController.closeModal(elements.loginModal);
 	}
 });
 elements.accountCancel.addEventListener('click', function() {
-	closeModal(elements.accountModal);
+	authController.closeModal(elements.accountModal);
 });
 elements.accountForm.addEventListener('submit', function(event) {
-	submitAccountForm(event).catch(function(error) {
+	authController.submitAccountForm(event).catch(function(error) {
 		setStatus(error.message, true);
 	});
 });
 elements.accountModal.addEventListener('click', function(event) {
 	if (event.target === elements.accountModal) {
-		closeModal(elements.accountModal);
+		authController.closeModal(elements.accountModal);
 	}
 });
 elements.adminCancel.addEventListener('click', function() {
-	closeModal(elements.adminModal);
+	authController.closeModal(elements.adminModal);
 });
 elements.adminModal.addEventListener('click', function(event) {
 	if (event.target === elements.adminModal) {
-		closeModal(elements.adminModal);
+		authController.closeModal(elements.adminModal);
 	}
 });
 elements.adminCreateGeneratePassword.addEventListener('change', function(event) {
@@ -2979,7 +1943,7 @@ elements.adminCreateGeneratePassword.addEventListener('change', function(event) 
 	}
 });
 elements.adminCreateUserForm.addEventListener('submit', function(event) {
-	submitAdminCreateUserForm(event).catch(function(error) {
+	authController.submitAdminCreateUserForm(event).catch(function(error) {
 		setStatus(error.message, true);
 	});
 });
@@ -3000,16 +1964,16 @@ if (event.target.checked) {
 		appState.selectedFileIds.delete(document.id);
 	}
 }
-updateBulkActionState(visibleDocuments);
-renderCurrentDocumentList();
+documentListController.updateBulkActionState(visibleDocuments);
+documentListController.renderCurrentDocumentList();
 });
 elements.themeSelect.addEventListener('change', function(event) {
-applyThemeMode(event.target.value, true);
+themeController.applyThemeMode(event.target.value, true);
 });
 
-initializeTheme();
-syncViewerLayout();
-maybeLaunchPublicShare().then(function(launchedFromShare) {
+themeController.initializeTheme();
+viewerLayoutController.syncViewerLayout();
+viewerSessionController.maybeLaunchPublicShare().then(function(launchedFromShare) {
 if (!launchedFromShare) {
 	loadPage();
 }
