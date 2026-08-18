@@ -2,10 +2,27 @@
 
 This project is a small WOPI host for Collabora Online CODE. It lists Office files from a mounted folder, opens them in Collabora, and writes saves back into the same folder.
 
+## Easy file browser with document preview
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="screenshot_dark.png">
   <source media="(prefers-color-scheme: light)" srcset="screenshot_light.png">
   <img alt="Screenshot" src="screenshot_light.png">
+</picture>
+
+
+## Detailed file view for sharing, activity and document restore
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshot_details_dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="screenshot_details_light.png">
+  <img alt="Screenshot" src="screenshot_details_light.png">
+</picture>
+
+
+## Runs out-of-box as shared-user and can be used with accounts, also.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshot_admin_dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="screenshot_admin_light.png">
+  <img alt="Screenshot" src="screenshot_admin_light.png">
 </picture>
 
 ## Features
@@ -82,7 +99,7 @@ The Compose file already wires the important variables:
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `DOCUMENTS_HOST_PATH` | Host folder mounted into the app container | `./example-documents` |
-| `WOPI_STATE_ROOT` | Dedicated folder for persistent runtime state; defaults to `<DOCUMENT_ROOT>/.wopi-state` | `<DOCUMENT_ROOT>/.wopi-state` |
+| `WOPI_STATE_ROOT` | Dedicated folder for persistent runtime state | `./wopi-state` |
 | `APP_BASE_URL` | Collabora-reachable base URL used for `WOPISrc` callbacks | `http://app:3000` |
 | `COLLABORA_INTERNAL_URL` | URL used by the app container to fetch discovery | `http://collabora:9980` |
 | `COLLABORA_PUBLIC_URL` | Browser-visible Collabora URL used inside the iframe | `http://localhost:9980` |
@@ -104,6 +121,9 @@ services:
 ```
 
 This keeps the document volume clean while preserving the app's registry, locks, and cache data in a dedicated Docker volume or host folder.
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
 | `MAX_DOCUMENT_SIZE` | Raw upload limit for `PutFile` | `100mb` |
 | `TEMPLATE_ROOT` | Template root folder for personal/group/global/admin templates | `<DOCUMENT_ROOT>/.templates` |
 | `DEFAULT_EDITOR_MODE` | Launch mode for Open action (`edit`/`view`) | `edit` |
