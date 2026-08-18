@@ -212,12 +212,12 @@ router.post('/files/:fileId/contents', async function(req, res, next) {
 			return;
 		}
 
-		await createVersionSnapshot(authorized.documentRoot, authorized.document, {
+		await fs.writeFile(authorized.document.absolutePath, req.body);
+		const updatedDocument = await getDocumentById(authorized.documentRoot, req.params.fileId);
+		await createVersionSnapshot(authorized.documentRoot, updatedDocument, {
 			id: authorized.tokenPayload.userId || 'shared-user',
 			name: authorized.tokenPayload.userName || 'Shared Folder User'
 		});
-		await fs.writeFile(authorized.document.absolutePath, req.body);
-		const updatedDocument = await getDocumentById(authorized.documentRoot, req.params.fileId);
 		await invalidatePreview(authorized.documentRoot, updatedDocument);
 		await recordEditActivity(authorized.documentRoot, {
 			fileId: updatedDocument.id,
