@@ -5,6 +5,7 @@ const fs = require('fs/promises');
 const multer = require('multer');
 
 const config = require('../lib/config');
+const packageJson = require('../package.json');
 const { createAccessToken } = require('../lib/accessToken');
 const { appendActivity, listActivity } = require('../lib/activityStore');
 const { getActionUrl, getSupportedFormats } = require('../lib/discovery');
@@ -168,6 +169,7 @@ async function buildLaunchPayload(req, document, mode, shareId, versionId) {
 
 router.get('/config', function(req, res) {
 	res.json({
+		appVersion: packageJson.version,
 		documentRoot: getDocumentRoot(req),
 		templateRoot: config.templateRoot,
 		appBaseUrl: config.getPublicAppBaseUrl(req),

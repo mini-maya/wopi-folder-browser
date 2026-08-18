@@ -44,6 +44,7 @@ const elements = {
 	accountButton: document.querySelector('#account-button'),
 	loginButton: document.querySelector('#login-button'),
 	logoutButton: document.querySelector('#logout-button'),
+	aboutButton: document.querySelector('#about-button'),
 	themeSelect: document.querySelector('#theme-select'),
 	searchInput: document.querySelector('#search-input'),
 	collaboraForm: document.querySelector('#collabora-submit-form'),
@@ -85,7 +86,10 @@ const elements = {
 	adminCreatePassword: document.querySelector('#admin-create-password'),
 	adminCreateGeneratePassword: document.querySelector('#admin-create-generate-password'),
 	adminGeneratedPassword: document.querySelector('#admin-generated-password'),
-	adminUsersBody: document.querySelector('#admin-users-body')
+	adminUsersBody: document.querySelector('#admin-users-body'),
+	aboutModal: document.querySelector('#about-modal'),
+	aboutCancel: document.querySelector('#about-cancel'),
+	aboutVersion: document.querySelector('#about-version')
 };
 
 const appState = {
@@ -215,6 +219,17 @@ function toggleNewDocumentMenu(button) {
 		return;
 	}
 	contextMenuController.toggleNewDocumentMenu(button);
+}
+
+function openAboutDialog() {
+	elements.aboutModal.classList.remove('hidden');
+	elements.aboutModal.setAttribute('aria-hidden', 'false');
+	elements.aboutCancel.focus();
+}
+
+function closeAboutDialog() {
+	elements.aboutModal.classList.add('hidden');
+	elements.aboutModal.setAttribute('aria-hidden', 'true');
 }
 
 const viewerSessionController = createViewerSessionController({
@@ -432,6 +447,7 @@ async function loadPage() {
 		appState.auth.storageContext = config.storageContext || appState.auth.storageContext || 'shared';
 		authController.applyPasswordPolicyToForms(config.passwordMinLength);
 		authController.renderAuthControls();
+		elements.aboutVersion.textContent = config.appVersion || 'Unknown';
 		elements.documentRoot.textContent = config.documentRoot;
 		elements.appBaseUrl.textContent = config.appBaseUrl;
 		elements.collaboraUrl.textContent = config.collaboraPublicUrl;
@@ -515,5 +531,12 @@ const appBootstrap = createAppBootstrap({
 	toggleNewDocumentMenu: toggleNewDocumentMenu,
 	toggleBulkActionsMenu: toggleBulkActionsMenu,
 	setStatus: setStatus
+});
+elements.aboutButton.addEventListener('click', openAboutDialog);
+elements.aboutCancel.addEventListener('click', closeAboutDialog);
+elements.aboutModal.addEventListener('click', function(event) {
+	if (event.target === elements.aboutModal) {
+		closeAboutDialog();
+	}
 });
 appBootstrap.bind();

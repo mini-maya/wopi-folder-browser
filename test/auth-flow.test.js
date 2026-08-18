@@ -197,3 +197,17 @@ test('setup, authentication, authorization and storage isolation flow', async fu
 		await fs.rm(instance.tempRoot, { recursive: true, force: true });
 	}
 });
+
+test('config endpoint exposes the app version', async function() {
+	const instance = await startIsolatedServer();
+
+	try {
+		const client = createClient(instance.baseUrl);
+		const requestResult = await client.request('/api/config');
+		assert.equal(requestResult.response.status, 200);
+		assert.equal(requestResult.payload.appVersion, require('../package.json').version);
+	} finally {
+		await new Promise((resolve, reject) => instance.server.close((error) => (error ? reject(error) : resolve())));
+		await fs.rm(instance.tempRoot, { recursive: true, force: true });
+	}
+});

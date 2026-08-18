@@ -259,6 +259,10 @@ button.danger:hover {
   align-items: center;
 }
 
+.heading-actions .icon-button {
+  flex: 0 0 auto;
+}
+
 .auth-controls {
   display: flex;
   gap: 0.5rem;
@@ -685,6 +689,28 @@ tbody tr.selected-row {
 .modal-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.about-modal-card {
+  width: min(44rem, 100%);
+}
+
+.about-modal-body {
+  gap: 0.85rem;
+}
+
+.about-modal-body p {
+  margin: 0;
+}
+
+.about-modal-body a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.about-modal-body strong {
+  font-weight: 700;
 }
 
 .upload-modal-card {
