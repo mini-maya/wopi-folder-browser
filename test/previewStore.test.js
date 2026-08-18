@@ -18,7 +18,7 @@ const ONE_PIXEL_PNG = Buffer.from(
 	'base64'
 );
 
-test('storeThumbnail persists and getCachedThumbnail resolves entry by fileId+version', async function() {
+test('storeThumbnail persists the current preview for a file version', async function() {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-preview-store-'));
 	const stored = await storeThumbnail(tempRoot, {
 		fileId: 'file-1',
@@ -38,7 +38,7 @@ test('storeThumbnail persists and getCachedThumbnail resolves entry by fileId+ve
 	assert.equal(await resolveThumbnailAbsolutePath(tempRoot, 'file-1', '7'), cached.absolutePath);
 });
 
-test('invalidatePreview writes invalidation marker without deleting cached version entries', async function() {
+test('invalidatePreview removes the current preview for a file', async function() {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-preview-store-'));
 	await storeThumbnail(tempRoot, {
 		fileId: 'file-2',
@@ -52,15 +52,16 @@ test('invalidatePreview writes invalidation marker without deleting cached versi
 	await invalidatePreview(tempRoot, {
 		id: 'file-2',
 		relativePath: 'slides.pptx',
-		version: '9'
+		version: '8'
 	});
-	const cachedOldVersion = await getCachedThumbnail(tempRoot, 'file-2', '8');
-	assert.ok(cachedOldVersion);
+	const cachedCurrentVersion = await getCachedThumbnail(tempRoot, 'file-2', '8');
+	assert.equal(cachedCurrentVersion, null);
+	assert.equal(await resolveThumbnailAbsolutePath(tempRoot, 'file-2', '8'), null);
 });
 
-test('storeThumbnail keeps only the latest five versions per file', async function() {
+test('storeThumbnail overwrites stale previews when the file version changes', async function() {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-preview-store-'));
-	for (let version = 1; version <= 6; version += 1) {
+	for (let version = 1; version <= 3; version += 1) {
 		await storeThumbnail(tempRoot, {
 			fileId: 'file-gc',
 			version: String(version),
@@ -73,8 +74,8 @@ test('storeThumbnail keeps only the latest five versions per file', async functi
 	}
 	const firstVersion = await getCachedThumbnail(tempRoot, 'file-gc', '1');
 	const secondVersion = await getCachedThumbnail(tempRoot, 'file-gc', '2');
-	const sixthVersion = await getCachedThumbnail(tempRoot, 'file-gc', '6');
+	const thirdVersion = await getCachedThumbnail(tempRoot, 'file-gc', '3');
 	assert.equal(firstVersion, null);
-	assert.ok(secondVersion);
-	assert.ok(sixthVersion);
+	assert.equal(secondVersion, null);
+	assert.ok(thirdVersion);
 });

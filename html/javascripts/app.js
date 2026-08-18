@@ -674,6 +674,29 @@ function isThumbnailDebugEnabled() {
 	return Boolean(appState.config?.thumbnail?.debug);
 }
 
+function syncDetailThumbnailCacheWithDocuments() {
+	const currentVersionsByFileId = new Map(
+		appState.documents
+			.filter((document) => !document.isDirectory)
+			.map((document) => [document.id, String(document.version || '')])
+	);
+	for (const [fileId, cachedValue] of appState.detailThumbnailCache.entries()) {
+		const currentVersion = currentVersionsByFileId.get(fileId);
+		if (!currentVersion) {
+			appState.detailThumbnailCache.delete(fileId);
+			continue;
+		}
+		if (!cachedValue || typeof cachedValue !== 'object' || String(cachedValue.version || '') !== currentVersion) {
+			appState.detailThumbnailCache.delete(fileId);
+		}
+	}
+	for (const [fileId] of appState.detailThumbnailInFlight.entries()) {
+		if (!currentVersionsByFileId.has(fileId)) {
+			appState.detailThumbnailInFlight.delete(fileId);
+		}
+	}
+}
+
 async function loadOfficeDetailsThumbnail(document) {
 	if (!supportsOfficeDetailsThumbnail(document)) {
 		return;
@@ -684,12 +707,11 @@ async function loadOfficeDetailsThumbnail(document) {
 	}
 	const requestId = appState.detailThumbnailRequestId + 1;
 	appState.detailThumbnailRequestId = requestId;
-	const cacheKey = `${document.id}:${document.version}`;
-	const cachedThumbnailUrl = appState.detailThumbnailCache.get(cacheKey);
-	if (cachedThumbnailUrl) {
-		previewImage.src = cachedThumbnailUrl;
+	const cacheKey = document.id;
+	const cachedEntry = appState.detailThumbnailCache.get(cacheKey);
+	if (cachedEntry?.thumbnailUrl) {
+		previewImage.src = cachedEntry.thumbnailUrl;
 		previewImage.classList.remove('folder-icon');
-		return;
 	}
 	const existingRequest = appState.detailThumbnailInFlight.get(cacheKey);
 	if (existingRequest) {
@@ -712,7 +734,7 @@ async function loadOfficeDetailsThumbnail(document) {
 		if (isThumbnailDebugEnabled()) {
 			console.info('[thumbnail-debug] details thumbnail response', {
 				fileId: document.id,
-				version: document.version,
+				version: payload?.version || null,
 				status: payload?.status || null,
 				hasThumbnailUrl: Boolean(payload?.thumbnailUrl)
 			});
@@ -721,7 +743,10 @@ async function loadOfficeDetailsThumbnail(document) {
 			return;
 		}
 		if (payload.status === 'THUMBNAIL_RENDERED' && payload.thumbnailUrl) {
-			appState.detailThumbnailCache.set(cacheKey, payload.thumbnailUrl);
+			appState.detailThumbnailCache.set(cacheKey, {
+				version: String(payload.version || document.version || ''),
+				thumbnailUrl: payload.thumbnailUrl
+			});
 			previewImage.src = payload.thumbnailUrl;
 			previewImage.classList.remove('folder-icon');
 		}
@@ -730,7 +755,7 @@ async function loadOfficeDetailsThumbnail(document) {
 		if (isThumbnailDebugEnabled()) {
 			console.info('[thumbnail-debug] details thumbnail request failed', {
 				fileId: document.id,
-				version: document.version,
+				version: String(document.version || ''),
 				error: error.message
 			});
 		}
@@ -1645,6 +1670,7 @@ async function loadPage() {
 		appState.auth = authState;
 		appState.config = config;
 		appState.documents = fileList.documents;
+		syncDetailThumbnailCacheWithDocuments();
 		appState.auth.storageContext = config.storageContext || appState.auth.storageContext || 'shared';
 		applyPasswordPolicyToForms(config.passwordMinLength);
 		renderAuthControls();

@@ -8,11 +8,19 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { renderOfficeThumbnail } = require('../lib/thumbnailService');
+const { resolveConvertToPaths } = require('../lib/collaboraCapabilities');
 
 const SMALL_PNG = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Y8h8AAAAASUVORK5CYII=',
 	'base64'
 );
+
+test('resolveConvertToPaths prefers a PNG endpoint when capabilities advertise a base convert path', function() {
+	const paths = resolveConvertToPaths({ 'convert-to': { available: true, endpoint: '/cool/convert-to' } });
+	assert.ok(paths.length >= 2);
+	assert.equal(paths[0], '/cool/convert-to/png');
+	assert.equal(paths.includes('/cool/convert-to'), true);
+});
 
 test('renderOfficeThumbnail returns THUMBNAIL_RENDERED and stores PNG', async function() {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-thumbnail-service-'));
