@@ -6,6 +6,8 @@ import { createUploadController } from './upload/uploadController.mjs';
 import { buildFilePreviewSvg, buildFolderPictogramSvg, folderContainsFiles } from './ui/filePreviews.mjs';
 import { escapeHtml, formatBytes, formatDate } from './ui/formatting.mjs';
 import { createDocumentListController } from './documents/listController.mjs';
+import { createDetailsPanelController } from './documents/detailsPanelController.mjs';
+import { createFolderTargetController } from './dialogs/folderTargetController.mjs';
 import { createAuthController } from './auth/authController.mjs';
 import { createThemeController } from './ui/themeController.mjs';
 import { createViewerLayoutController } from './viewer/layoutController.mjs';
@@ -125,11 +127,6 @@ const appState = {
 const DEFAULT_VIEWER_TITLE = 'No document opened yet';
 const DEFAULT_VIEWER_SUBTITLE = 'Choose a file from the list to open it in Collabora.';
 const DEFAULT_VIEWER_WIDTH = 800;
-const OFFICE_THUMBNAIL_EXTENSIONS = new Set([
-	'.doc', '.docx', '.odt',
-	'.xls', '.xlsx', '.ods',
-	'.ppt', '.pptx', '.odp'
-]);
 
 const themeController = createThemeController({
 	appState: appState,
@@ -198,6 +195,42 @@ const documentListController = createDocumentListController({
 	onHandleFileAction: handleFileAction
 });
 
+const detailsPanelController = createDetailsPanelController({
+	elements: elements,
+	appState: appState,
+	requestJson: requestJson,
+	getDocumentById: getDocumentById,
+	isFolderEntry: isFolderEntry,
+	getFolderSizeBytes: getFolderSizeBytes,
+	buildFolderPictogramSvg: buildFolderPictogramSvg,
+	buildFilePreviewSvg: buildFilePreviewSvg,
+	escapeHtml: escapeHtml,
+	formatBytes: formatBytes,
+	formatDate: formatDate,
+	onSetStatus: setStatus,
+	onCreateShare: createShare,
+	onHandleFileAction: handleFileAction,
+	onOpenFolderTargetDialog: async function(action, fileIds) {
+		await folderTargetController.openFolderTargetDialog(action, fileIds);
+	},
+	onDeleteDocument: deleteDocument,
+	onLoadPage: async function() {
+		await loadPage();
+	},
+	onSaveAsDocument: saveAsDocument,
+	onViewerOpenDocument: async function(fileId, mode) {
+		await viewerSessionController.openDocument(fileId, mode);
+	},
+	onViewerSubmitLaunchPayload: function(payload) {
+		viewerSessionController.submitLaunchPayload(payload);
+	},
+	onCloseOpenContextMenu: closeOpenContextMenu,
+	onPositionContextMenu: positionContextMenu,
+	onOpenNameEntryDialog: function(options) {
+		folderTargetController.openNameEntryDialog(options);
+	}
+});
+
 const uploadController = createUploadController({
 	elements: elements,
 	appState: appState,
@@ -214,471 +247,31 @@ const uploadController = createUploadController({
 	onCloseOpenContextMenu: closeOpenContextMenu
 });
 
+const folderTargetController = createFolderTargetController({
+	elements: elements,
+	appState: appState,
+	requestJson: requestJson,
+	escapeHtml: escapeHtml,
+	isFolderEntry: isFolderEntry,
+	getDocumentById: getDocumentById,
+	onSetStatus: setStatus,
+	onLoadPage: async function() {
+		await loadPage();
+	},
+	onMoveDocuments: moveDocuments,
+	onCopyDocuments: copyDocuments,
+	onMoveDocument: moveDocument,
+	onCopyDocument: copyDocument,
+	onRenderVersionList: async function(fileId) {
+		await detailsPanelController.renderVersionList(fileId);
+	},
+	onViewerSubmitLaunchPayload: function(payload) {
+		viewerSessionController.submitLaunchPayload(payload);
+	}
+});
+
 function getDocumentById(fileId) {
 	return appState.documents.find((document) => document.id === fileId) || null;
-}
-
-function getPreviewImage(document) {
-	if (!document) {
-		return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><rect width="240" height="160" fill="#e2e8f0"/><text x="120" y="90" text-anchor="middle" font-family="Arial" font-size="36" fill="#475569">FILE</text></svg>');
-	}
-	if (document.isDirectory) {
-		return buildFolderPictogramSvg({
-			isOpen: false,
-			hasFiles: false,
-			isFavorite: Boolean(document.favorite),
-			preferFavoriteIcon: true
-		});
-	}
-	return buildFilePreviewSvg(document);
-}
-
-function supportsOfficeDetailsThumbnail(document) {
-	if (!document || document.isDirectory) {
-		return false;
-	}
-	return OFFICE_THUMBNAIL_EXTENSIONS.has(String(document.extension || '').toLowerCase());
-}
-
-function isThumbnailDebugEnabled() {
-	return Boolean(appState.config?.thumbnail?.debug);
-}
-
-function syncDetailThumbnailCacheWithDocuments() {
-	const currentVersionsByFileId = new Map(
-		appState.documents
-			.filter((document) => !document.isDirectory)
-			.map((document) => [document.id, String(document.version || '')])
-	);
-	for (const [fileId, cachedValue] of appState.detailThumbnailCache.entries()) {
-		const currentVersion = currentVersionsByFileId.get(fileId);
-		if (!currentVersion) {
-			appState.detailThumbnailCache.delete(fileId);
-			continue;
-		}
-		if (!cachedValue || typeof cachedValue !== 'object' || String(cachedValue.version || '') !== currentVersion) {
-			appState.detailThumbnailCache.delete(fileId);
-		}
-	}
-	for (const [fileId] of appState.detailThumbnailInFlight.entries()) {
-		if (!currentVersionsByFileId.has(fileId)) {
-			appState.detailThumbnailInFlight.delete(fileId);
-		}
-	}
-}
-
-async function loadOfficeDetailsThumbnail(document) {
-	if (!supportsOfficeDetailsThumbnail(document)) {
-		return;
-	}
-	const previewImage = elements.detailsPanelContent.querySelector('.details-preview img');
-	if (!previewImage) {
-		return;
-	}
-	const requestId = appState.detailThumbnailRequestId + 1;
-	appState.detailThumbnailRequestId = requestId;
-	const cacheKey = document.id;
-	const cachedEntry = appState.detailThumbnailCache.get(cacheKey);
-	if (cachedEntry?.thumbnailUrl) {
-		previewImage.src = cachedEntry.thumbnailUrl;
-		previewImage.classList.remove('folder-icon');
-	}
-	const existingRequest = appState.detailThumbnailInFlight.get(cacheKey);
-	if (existingRequest) {
-		try {
-			const payload = await existingRequest;
-			if (appState.detailThumbnailRequestId === requestId && appState.activeDetailFileId === document.id && payload?.status === 'THUMBNAIL_RENDERED' && payload?.thumbnailUrl) {
-				previewImage.src = payload.thumbnailUrl;
-				previewImage.classList.remove('folder-icon');
-			}
-		} catch (error) {
-			// Keep fallback icon in the detail panel when thumbnail rendering fails.
-		}
-		return;
-	}
-	try {
-		const pendingPayload = requestJson(`/api/files/${encodeURIComponent(document.id)}/thumbnail`);
-		appState.detailThumbnailInFlight.set(cacheKey, pendingPayload);
-		const payload = await pendingPayload;
-		appState.detailThumbnailInFlight.delete(cacheKey);
-		if (isThumbnailDebugEnabled()) {
-			console.info('[thumbnail-debug] details thumbnail response', {
-				fileId: document.id,
-				version: payload?.version || null,
-				status: payload?.status || null,
-				hasThumbnailUrl: Boolean(payload?.thumbnailUrl)
-			});
-		}
-		if (appState.detailThumbnailRequestId !== requestId || appState.activeDetailFileId !== document.id) {
-			return;
-		}
-		if (payload.status === 'THUMBNAIL_RENDERED' && payload.thumbnailUrl) {
-			appState.detailThumbnailCache.set(cacheKey, {
-				version: String(payload.version || document.version || ''),
-				thumbnailUrl: payload.thumbnailUrl
-			});
-			previewImage.src = payload.thumbnailUrl;
-			previewImage.classList.remove('folder-icon');
-		}
-	} catch (error) {
-		appState.detailThumbnailInFlight.delete(cacheKey);
-		if (isThumbnailDebugEnabled()) {
-			console.info('[thumbnail-debug] details thumbnail request failed', {
-				fileId: document.id,
-				version: String(document.version || ''),
-				error: error.message
-			});
-		}
-		// Keep fallback icon in the detail panel when thumbnail rendering fails.
-	}
-}
-
-function openDetailsPanel(fileId) {
-	const document = getDocumentById(fileId);
-	if (!document) {
-		return;
-	}
-	if (appState.activeDetailFileId !== fileId) {
-		appState.activeDetailTab = 'share';
-		appState.activeDetailFileId = fileId;
-	}
-	elements.detailsPanel.classList.remove('hidden');
-	renderDetailsPanel(document);
-}
-
-function closeDetailsPanel() {
-	elements.detailsPanel.classList.add('hidden');
-}
-
-function renderDetailsPanel(document) {
-	const isFolder = isFolderEntry(document);
-	const folderSizeBytes = isFolder ? getFolderSizeBytes(document, appState.documents) : document.size;
-	const previewClass = isFolder ? 'folder-icon' : '';
-	const favoriteLabel = document.favorite ? '★ Favorite' : '☆ Favorite';
-
-	if (isFolder) {
-		const folderActionButtons = `
-				<button type="button" class="secondary" data-action="details-move" data-file-id="${document.id}">Move</button>
-				<button type="button" class="secondary" data-action="details-copy" data-file-id="${document.id}">Copy</button>
-				<button type="button" class="danger" data-action="details-delete" data-file-id="${document.id}">Delete</button>
-			`;
-		elements.detailsPanelContent.innerHTML = `
-		<div class="details-card">
-			<div class="details-preview">
-				<img class="${previewClass}" src="${getPreviewImage(document)}" alt="${escapeHtml(document.name)} preview">
-			</div>
-			<div class="details-header">
-				<h3>${escapeHtml(document.name)}</h3>
-				<button type="button" class="secondary" data-action="details-toggle-favorite" data-file-id="${document.id}">${favoriteLabel}</button>
-			</div>
-			<div class="detail-meta">
-				<div class="detail-meta-row"><span>Size</span><strong>${formatBytes(folderSizeBytes)}</strong></div>
-				<div class="detail-meta-row"><span>Modified</span><strong>${formatDate(document.updatedAt)}</strong></div>
-				<div class="detail-meta-row"><span>Type</span><strong>Folder</strong></div>
-				<div class="detail-meta-row"><span>Path</span><strong>${escapeHtml(document.relativePath)}</strong></div>
-			</div>
-			<div class="details-actions">
-				${folderActionButtons}
-			</div>
-		</div>
-	`;
-	} else {
-		const activeTab = appState.activeDetailTab || 'share';
-		elements.detailsPanelContent.innerHTML = `
-		<div class="details-card">
-			<div class="details-preview">
-				<img class="${previewClass}" src="${getPreviewImage(document)}" alt="${escapeHtml(document.name)} preview">
-			</div>
-			<div class="details-header">
-				<h3>${escapeHtml(document.name)}</h3>
-				<button type="button" class="secondary" data-action="details-toggle-favorite" data-file-id="${document.id}">${favoriteLabel}</button>
-			</div>
-			<div class="detail-meta">
-				<div class="detail-meta-row"><span>Size</span><strong>${formatBytes(folderSizeBytes)}</strong></div>
-				<div class="detail-meta-row"><span>Modified</span><strong>${formatDate(document.updatedAt)}</strong></div>
-				<div class="detail-meta-row"><span>Type</span><strong>File</strong></div>
-				<div class="detail-meta-row"><span>Path</span><strong>${escapeHtml(document.relativePath)}</strong></div>
-			</div>
-			<nav class="detail-tabs" aria-label="File detail tabs">
-				<button type="button" class="detail-tab-btn${activeTab === 'share' ? ' active' : ''}" data-tab="share" aria-selected="${activeTab === 'share'}">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-					<span>Share</span>
-				</button>
-				<button type="button" class="detail-tab-btn${activeTab === 'activities' ? ' active' : ''}" data-tab="activities" aria-selected="${activeTab === 'activities'}">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-					<span>Activities</span>
-				</button>
-				<button type="button" class="detail-tab-btn${activeTab === 'versions' ? ' active' : ''}" data-tab="versions" aria-selected="${activeTab === 'versions'}">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-					<span>Versions</span>
-				</button>
-			</nav>
-			<div class="detail-tab-content" id="detail-tab-content"></div>
-		</div>
-	`;
-		attachDetailTabListeners(document.id);
-		switchDetailTab(document.id, activeTab);
-	}
-
-	for (const button of elements.detailsPanelContent.querySelectorAll('[data-action][data-file-id]')) {
-		button.addEventListener('click', function() {
-			handleDetailsAction(button.dataset.action, button.dataset.fileId);
-		});
-	}
-	if (!isFolder) {
-		loadOfficeDetailsThumbnail(document);
-	}
-}
-
-function attachDetailTabListeners(fileId) {
-	const tabButtons = elements.detailsPanelContent.querySelectorAll('.detail-tab-btn');
-	for (const btn of tabButtons) {
-		btn.addEventListener('click', function() {
-			const tab = btn.dataset.tab;
-			appState.activeDetailTab = tab;
-			for (const b of tabButtons) {
-				b.classList.toggle('active', b.dataset.tab === tab);
-				b.setAttribute('aria-selected', b.dataset.tab === tab ? 'true' : 'false');
-			}
-			switchDetailTab(fileId, tab);
-		});
-	}
-}
-
-function switchDetailTab(fileId, tab) {
-	const container = elements.detailsPanelContent.querySelector('#detail-tab-content');
-	if (!container) {
-		return;
-	}
-	container.innerHTML = '';
-	if (tab === 'share') {
-		renderShareTabContent(fileId, container);
-	} else if (tab === 'activities') {
-		renderActivityTabContent(fileId, container);
-	} else if (tab === 'versions') {
-		renderVersionsTabContent(fileId, container);
-	}
-}
-
-function renderShareTabContent(fileId, container) {
-	container.innerHTML = `
-		<div class="tab-section">
-			<p class="tab-section-description">Share this file with others by creating a link.</p>
-			<button type="button" class="share-tab-btn" data-share-file-id="${fileId}">
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-				Create share link
-			</button>
-		</div>
-	`;
-	const shareBtn = container.querySelector('.share-tab-btn');
-	shareBtn.addEventListener('click', async function() {
-		await createShare(fileId);
-	});
-}
-
-async function renderActivityTabContent(fileId, container) {
-	container.innerHTML = '<div class="tab-loading">Loading activities…</div>';
-	try {
-		const payload = await requestJson('/api/activities?limit=200');
-		const allActivities = Array.isArray(payload.activities) ? payload.activities : [];
-		const activities = allActivities.filter((a) => a.fileId === fileId);
-
-		const activityLabels = {
-			open: 'Opened',
-			edit: 'Edited',
-			create: 'Created',
-			share: 'Shared',
-			move: 'Moved',
-			copy: 'Copied',
-			rename: 'Renamed',
-			download: 'Downloaded',
-			upload: 'Uploaded',
-			'restore-version': 'Restored version',
-			'delete-version': 'Deleted version',
-			delete: 'Deleted'
-		};
-
-		if (!activities.length) {
-			container.innerHTML = '<div class="tab-empty">No activity recorded yet.</div>';
-			return;
-		}
-
-		container.innerHTML = `
-			<ul class="activity-list" aria-label="File activity">
-				${activities.map(function(a) {
-					const label = activityLabels[a.type] || a.type;
-					const countNote = a.count && a.count > 1 ? ` <span class="activity-count">×${a.count}</span>` : '';
-					return `
-						<li class="activity-item">
-							<div class="activity-item-dot" aria-hidden="true"></div>
-							<div class="activity-item-body">
-								<span class="activity-item-action">${escapeHtml(label)}${countNote}</span>
-								<span class="activity-item-meta">
-									<span class="activity-item-user">${escapeHtml(a.userName || a.userId || 'Unknown')}</span>
-									<span class="activity-item-time">${formatDate(a.createdAt)}</span>
-								</span>
-							</div>
-						</li>
-					`;
-				}).join('')}
-			</ul>
-		`;
-	} catch (error) {
-		container.innerHTML = `<div class="tab-empty tab-error">Could not load activities: ${escapeHtml(error.message)}</div>`;
-	}
-}
-
-async function renderVersionsTabContent(fileId, container) {
-	container.innerHTML = '<div class="tab-loading">Loading versions…</div>';
-	try {
-		const payload = await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions`);
-		const fileEntry = getDocumentById(fileId);
-		const versions = Array.isArray(payload.versions) ? payload.versions : [];
-
-		container.innerHTML = `
-			<div class="version-list">
-				${versions.length ? versions.map(function(version, index) {
-					const isCurrent = index === 0;
-					const versionNumber = isCurrent ? null : versions.length - index;
-					return `
-						<div class="version-item">
-							<div class="version-thumb"><img src="${getPreviewImage(fileEntry)}" alt="Version preview"></div>
-							<div class="version-body">
-								<h4>${isCurrent ? 'Current version' : `Version ${versionNumber}`}${version.label ? ` — ${escapeHtml(version.label)}` : ''}</h4>
-								<small>${escapeHtml(version.createdBy?.name ?? 'Unknown')}</small>
-								<small>${formatDate(version.createdAt)} · ${formatBytes(version.size)}</small>
-							</div>
-							<div class="version-actions" style="position: relative;">
-								<button type="button" class="secondary menu-button" data-action="context-menu" data-file-id="${fileId}" data-version-id="${version.id}" aria-label="Open version actions" aria-expanded="false">⋯</button>
-							</div>
-						</div>
-					`;
-				}).join('') : '<div class="file-meta">No versions recorded yet.</div>'}
-			</div>
-		`;
-
-		for (const button of container.querySelectorAll('[data-action="context-menu"][data-version-id]')) {
-			button.addEventListener('click', function(event) {
-				event.preventDefault();
-				event.stopPropagation();
-				const menuEntries = [];
-				const version = versions.find((entry) => entry.id === button.dataset.versionId);
-				if (!version) {
-					return;
-				}
-				const isCurrent = versions[0]?.id === version.id;
-				menuEntries.push({ label: 'View', action: 'version-view', danger: false });
-				menuEntries.push({ divider: true });
-				menuEntries.push(isCurrent
-					? { label: 'Name current', action: 'version-name-current', danger: false }
-					: { label: 'Rename', action: 'version-rename', danger: false }
-				);
-				if (!isCurrent) {
-					menuEntries.push({ label: 'Restore', action: 'version-restore', danger: false });
-				}
-				menuEntries.push({ label: 'Download', action: 'version-download', danger: false });
-				if (!isCurrent) {
-					menuEntries.push({ divider: true });
-					menuEntries.push({ label: 'Delete', action: 'version-delete', danger: true });
-				}
-
-				closeOpenContextMenu();
-				const menu = document.createElement('div');
-				menu.className = 'context-menu';
-				menu.innerHTML = menuEntries.map(function(entry) {
-					if (entry.divider) {
-						return '<div class="context-menu-separator"></div>';
-					}
-					const accentClass = entry.accent ? 'accent' : '';
-					return `<button type="button" data-context-action="${entry.action}" data-file-id="${fileId}" data-version-id="${version.id}" class="${entry.danger ? 'danger' : ''} ${accentClass}">${entry.label}</button>`;
-				}).join('');
-				for (const menuButton of menu.querySelectorAll('[data-context-action][data-file-id]')) {
-					menuButton.addEventListener('click', function(menuEvent) {
-						menuEvent.preventDefault();
-						menuEvent.stopPropagation();
-						closeOpenContextMenu();
-						handleVersionAction(menuButton.dataset.contextAction, fileId, version.id);
-					});
-				}
-				positionContextMenu(menu, button, 220, 220);
-				document.body.appendChild(menu);
-				button.setAttribute('aria-expanded', 'true');
-			});
-		}
-	} catch (error) {
-		container.innerHTML = `<div class="tab-empty tab-error">Could not load versions: ${escapeHtml(error.message)}</div>`;
-	}
-}
-
-async function renderVersionList(fileId) {
-	openDetailsPanel(fileId);
-	appState.activeDetailTab = 'versions';
-	const container = elements.detailsPanelContent.querySelector('#detail-tab-content');
-	if (container) {
-		const tabButtons = elements.detailsPanelContent.querySelectorAll('.detail-tab-btn');
-		for (const b of tabButtons) {
-			b.classList.toggle('active', b.dataset.tab === 'versions');
-			b.setAttribute('aria-selected', b.dataset.tab === 'versions' ? 'true' : 'false');
-		}
-		await renderVersionsTabContent(fileId, container);
-	}
-}
-
-async function handleDetailsAction(action, fileId) {
-	const document = getDocumentById(fileId);
-	switch (action) {
-		case 'details-toggle-favorite':
-			await handleFileAction('favorite', fileId);
-			openDetailsPanel(fileId);
-			return;
-		case 'details-view':
-			if (isFolderEntry(document)) {
-				setStatus('Folders cannot be previewed.', true);
-				return;
-			}
-			await viewerSessionController.openDocument(fileId, 'view');
-			return;
-		case 'details-open':
-			if (isFolderEntry(document)) {
-				setStatus('Folders cannot be opened in Collabora.', true);
-				return;
-			}
-			await viewerSessionController.openDocument(fileId, 'edit');
-			return;
-		case 'details-share':
-			if (isFolderEntry(document)) {
-				setStatus('Folders cannot be shared.', true);
-				return;
-			}
-			await createShare(fileId);
-			return;
-		case 'details-move':
-			await openFolderTargetDialog('move', fileId);
-			return;
-		case 'details-copy':
-			await openFolderTargetDialog('copy', fileId);
-			return;
-		case 'details-download':
-			if (isFolderEntry(document)) {
-				setStatus('Folders cannot be downloaded.', true);
-				return;
-			}
-			window.location.href = `/api/files/${encodeURIComponent(fileId)}/download`;
-			return;
-		case 'details-delete':
-			await deleteDocument(fileId);
-			await loadPage();
-			closeDetailsPanel();
-			return;
-		case 'details-save-as':
-			await saveAsDocument(fileId);
-			return;
-		case 'details-versions':
-			await renderVersionList(fileId);
-			return;
-		default:
-			return;
-	}
 }
 
 function showBulkActionsMenu(button) {
@@ -734,73 +327,14 @@ async function handleBulkAction(action) {
 			await downloadSelectedDocuments(selectedDocuments);
 			return;
 		case 'move':
-			await openFolderTargetDialog('move', selectedDocuments.map((document) => document.id));
+			await folderTargetController.openFolderTargetDialog('move', selectedDocuments.map((document) => document.id));
 			return;
 		case 'copy':
-			await openFolderTargetDialog('copy', selectedDocuments.map((document) => document.id));
+			await folderTargetController.openFolderTargetDialog('copy', selectedDocuments.map((document) => document.id));
 			return;
 		case 'delete':
 			await deleteSelectedDocuments(selectedDocuments);
 			return;
-		default:
-			return;
-	}
-}
-
-async function handleVersionAction(action, fileId, versionId) {
-	if (!versionId) {
-		return;
-	}
-	switch (action) {
-		case 'version-rename': {
-			const initialName = await getVersionLabel(fileId, versionId);
-			openNameEntryDialog({
-				action: 'version-rename',
-				title: 'Rename this version',
-				buttonText: 'Save',
-				defaultValue: initialName || '',
-				fileId,
-				directory: '',
-				versionId
-			});
-			return;
-		}
-		case 'version-view': {
-			const language = navigator.language || 'en-US';
-			const payload = await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}/view?lang=${encodeURIComponent(language)}`);
-			viewerSessionController.submitLaunchPayload(payload);
-			return;
-		}
-		case 'version-name-current': {
-			const initialName = await getVersionLabel(fileId, versionId);
-			openNameEntryDialog({
-				action: 'version-name-current',
-				title: 'Name the current version',
-				buttonText: 'Save',
-				defaultValue: initialName || '',
-				fileId,
-				directory: '',
-				versionId
-			});
-			return;
-		}
-		case 'version-restore':
-			await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}/restore`, { method: 'POST' });
-			await loadPage();
-			appState.activeDetailTab = 'versions';
-			openDetailsPanel(fileId);
-			return;
-		case 'version-download':
-			window.location.href = `/api/files/${encodeURIComponent(fileId)}/download?versionId=${encodeURIComponent(versionId)}`;
-			return;
-		case 'version-delete': {
-			if (!window.confirm('Delete this version? This cannot be undone.')) {
-				return;
-			}
-			await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}`, { method: 'DELETE' });
-			await renderVersionList(fileId);
-			return;
-		}
 		default:
 			return;
 	}
@@ -920,7 +454,7 @@ async function loadPage() {
 		appState.auth = authState;
 		appState.config = config;
 		appState.documents = fileList.documents;
-		syncDetailThumbnailCacheWithDocuments();
+		detailsPanelController.syncDetailThumbnailCacheWithDocuments();
 		appState.auth.storageContext = config.storageContext || appState.auth.storageContext || 'shared';
 		authController.applyPasswordPolicyToForms(config.passwordMinLength);
 		authController.renderAuthControls();
@@ -936,7 +470,7 @@ async function loadPage() {
 }
 
 async function createDocumentInDirectory(type, directory) {
-	openNameEntryDialog({
+	folderTargetController.openNameEntryDialog({
 		action: 'new-document',
 		title: getCreateDocumentDialogTitle(type),
 		buttonText: 'Create',
@@ -948,7 +482,7 @@ async function createDocumentInDirectory(type, directory) {
 }
 
 async function createFolderInDirectory(directory) {
-	openNameEntryDialog({
+	folderTargetController.openNameEntryDialog({
 		action: 'new-folder',
 		title: 'Create new folder',
 		buttonText: 'Create folder',
@@ -1098,49 +632,6 @@ async function copyDocument(fileId, targetNameOverride, targetDirectoryOverride)
 	}
 }
 
-function getFolderOptions() {
-	const folders = appState.documents.filter((document) => isFolderEntry(document));
-	return [
-		{ value: '', label: 'Root folder' },
-		...folders.map((folder) => ({
-			value: folder.relativePath,
-			label: folder.relativePath
-		}))
-	];
-}
-
-function populateFolderPicker(document, preferRoot = false) {
-	const options = getFolderOptions();
-	elements.folderPickerTarget.innerHTML = options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('');
-	const preferredTarget = preferRoot
-		? ''
-		: (document?.relativePath.includes('/')
-			? document.relativePath.slice(0, document.relativePath.lastIndexOf('/'))
-			: '');
-	elements.folderPickerTarget.value = options.some((option) => option.value === preferredTarget) ? preferredTarget : '';
-	elements.folderPickerName.value = document?.name ?? '';
-}
-
-function selectBasenameForInput(input, value) {
-	if (!input || !value) {
-		return;
-	}
-	const fileName = value.trim();
-	const parsedName = fileName.includes('.') ? fileName.slice(0, fileName.lastIndexOf('.')) : fileName;
-	if (!parsedName || fileName.startsWith('.')) {
-		return;
-	}
-	const start = 0;
-	const end = parsedName.length;
-	input.setSelectionRange(start, end);
-}
-
-async function getVersionLabel(fileId, versionId) {
-	const payload = await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions`);
-	const version = payload.versions.find((entry) => entry.id === versionId);
-	return version?.label ?? '';
-}
-
 function getDefaultDocumentNameByType(type) {
 	const configuredDefaults = appState.config?.defaultDocumentNames || {};
 	const extension = type === 'spreadsheet' ? '.ods'
@@ -1170,219 +661,6 @@ function getCreateDocumentDialogTitle(type) {
 					: type === 'microsoft-presentation'
 						? 'Create new Microsoft PowerPoint presentation'
 						: 'Create new text document';
-}
-
-function openNameEntryDialog({ action, title, buttonText, defaultValue, fileId, directory, versionId, documentType }) {
-	const documentEntry = fileId ? getDocumentById(fileId) : null;
-	const needsTargetDirectory = action === 'new-folder' || action === 'save-as';
-	appState.folderPickerAction = action;
-	appState.folderPickerSelectionIds = fileId ? [fileId] : [];
-	appState.folderPickerBulkMode = false;
-	appState.versionRenameId = versionId ?? null;
-	appState.newDocumentType = documentType ?? null;
-	appState.newDocumentDirectory = directory || '';
-	elements.folderPickerModal.classList.remove('hidden');
-	elements.folderPickerModal.setAttribute('aria-hidden', 'false');
-	elements.folderPickerTitle.textContent = title;
-	elements.folderPickerConfirm.textContent = buttonText;
-	elements.folderPickerTarget.closest('.modal-field').classList.toggle('hidden', !needsTargetDirectory);
-	elements.folderPickerName.closest('.modal-field').classList.remove('hidden');
-	if (needsTargetDirectory) {
-		const options = getFolderOptions();
-		elements.folderPickerTarget.innerHTML = options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('');
-		const preferredTarget = directory || (documentEntry && documentEntry.relativePath.includes('/')
-			? documentEntry.relativePath.slice(0, documentEntry.relativePath.lastIndexOf('/'))
-			: '');
-		elements.folderPickerTarget.value = options.some((option) => option.value === preferredTarget) ? preferredTarget : '';
-	} else {
-		elements.folderPickerTarget.innerHTML = '';
-	}
-	elements.folderPickerName.value = defaultValue ?? '';
-	elements.folderPickerName.focus();
-	prepareFolderPickerNameSelection();
-}
-
-function prepareFolderPickerNameSelection() {
-	if (!appState.folderPickerAction) {
-		return;
-	}
-	const selectedDocument = appState.folderPickerSelectionIds[0]
-		? getDocumentById(appState.folderPickerSelectionIds[0])
-		: null;
-	if (
-		appState.folderPickerAction === 'save-as'
-		|| appState.folderPickerAction === 'new-document'
-		|| (selectedDocument && !isFolderEntry(selectedDocument))
-	) {
-		selectBasenameForInput(elements.folderPickerName, elements.folderPickerName.value);
-	}
-}
-
-function openFolderTargetDialog(action, fileIds) {
-	const selectionIds = Array.isArray(fileIds) ? fileIds : [fileIds];
-	const selectedDocuments = selectionIds
-		.map((fileId) => getDocumentById(fileId))
-		.filter(Boolean);
-	if (!selectedDocuments.length) {
-		return;
-	}
-	const isBulkMode = selectedDocuments.length > 1;
-
-	appState.folderPickerAction = action;
-	appState.folderPickerSelectionIds = selectedDocuments.map((document) => document.id);
-	appState.folderPickerBulkMode = isBulkMode;
-	elements.folderPickerModal.classList.remove('hidden');
-	elements.folderPickerModal.setAttribute('aria-hidden', 'false');
-	elements.folderPickerConfirm.textContent = action === 'move' ? 'Move' : (action === 'save-as' ? 'Save' : 'Copy');
-	elements.folderPickerTitle.textContent = isBulkMode
-		? (action === 'move' ? 'Move selected items to folder' : (action === 'save-as' ? 'Save selected item as' : 'Copy selected items to folder'))
-		: (action === 'move' ? 'Move to folder' : (action === 'save-as' ? 'Save copy as' : 'Copy to folder'));
-	elements.folderPickerTarget.closest('.modal-field').classList.remove('hidden');
-	elements.folderPickerName.closest('.modal-field').classList.toggle('hidden', isBulkMode);
-	populateFolderPicker(selectedDocuments[0], action === 'save-as' ? false : isBulkMode);
-	if (action === 'save-as') {
-		elements.folderPickerTarget.value = selectedDocuments[0]?.relativePath.includes('/')
-			? selectedDocuments[0].relativePath.slice(0, selectedDocuments[0].relativePath.lastIndexOf('/'))
-			: '';
-		elements.folderPickerName.value = selectedDocuments[0]?.name ?? '';
-	}
-	if (isBulkMode) {
-		elements.folderPickerTarget.focus();
-	} else {
-		elements.folderPickerName.focus();
-	}
-	prepareFolderPickerNameSelection();
-}
-
-function closeFolderTargetDialog() {
-	appState.folderPickerAction = null;
-	appState.folderPickerSelectionIds = [];
-	appState.folderPickerBulkMode = false;
-	appState.versionRenameId = null;
-	appState.newDocumentType = null;
-	appState.newDocumentDirectory = '';
-	elements.folderPickerModal.classList.add('hidden');
-	elements.folderPickerModal.setAttribute('aria-hidden', 'true');
-}
-
-async function submitFolderTargetDialog(event) {
-	event.preventDefault();
-	const action = appState.folderPickerAction;
-	if (!action) {
-		return;
-	}
-	const targetDirectory = elements.folderPickerTarget.value;
-	const targetName = elements.folderPickerName.value.trim();
-	if (!targetName) {
-		setStatus('Please enter a name.', true);
-		return;
-	}
-
-	switch (action) {
-		case 'new-document': {
-			if (!appState.newDocumentType) {
-				setStatus('Document type is missing for this creation action.', true);
-				return;
-			}
-			setStatus(`Creating ${appState.newDocumentType} document...`);
-			const payload = await requestJson('/api/files', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					type: appState.newDocumentType,
-					fileName: targetName,
-					directory: appState.newDocumentDirectory || undefined,
-					mode: 'edit'
-				})
-			});
-			viewerSessionController.submitLaunchPayload(payload);
-			await loadPage();
-			closeFolderTargetDialog();
-			setStatus(`Created and opened ${payload.file.name}.`);
-			return;
-		}
-		case 'new-folder': {
-			await requestJson('/api/folders', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					directory: targetDirectory || undefined,
-					folderName: targetName
-				})
-			});
-			await loadPage();
-			closeFolderTargetDialog();
-			setStatus('Folder created.');
-			return;
-		}
-		case 'version-rename': {
-			const fileId = appState.folderPickerSelectionIds[0];
-			if (!fileId) {
-				return;
-			}
-			await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(appState.versionRenameId || '')}`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ label: targetName })
-			});
-			await renderVersionList(fileId);
-			closeFolderTargetDialog();
-			setStatus('Version renamed.');
-			return;
-		}
-		case 'version-name-current': {
-			const fileId = appState.folderPickerSelectionIds[0];
-			if (!fileId) {
-				return;
-			}
-			await requestJson(`/api/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(appState.versionRenameId || '')}`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ label: targetName })
-			});
-			await renderVersionList(fileId);
-			closeFolderTargetDialog();
-			setStatus('Current version named.');
-			return;
-		}
-		default: {
-			const selectionIds = appState.folderPickerSelectionIds;
-			const isBulkMode = appState.folderPickerBulkMode;
-			const documents = selectionIds
-				.map((fileId) => getDocumentById(fileId))
-				.filter(Boolean);
-			if (!documents.length) {
-				return;
-			}
-			try {
-				if (isBulkMode) {
-					if (action === 'move') {
-						await moveDocuments(documents, targetDirectory);
-					} else {
-						await copyDocuments(documents, targetDirectory);
-					}
-				} else {
-					const fileId = selectionIds[0];
-					if (action === 'move') {
-						await moveDocument(fileId, targetName, targetDirectory);
-					} else if (action === 'save-as') {
-						await copyDocument(fileId, targetName, targetDirectory);
-					} else {
-						await copyDocument(fileId, targetName, targetDirectory);
-					}
-				}
-			} catch (error) {
-				setStatus(error.message, true);
-				return;
-			}
-			await loadPage();
-			closeFolderTargetDialog();
-			setStatus(isBulkMode
-				? (action === 'move' ? 'Selected items moved.' : 'Selected items copied.')
-				: (action === 'move' ? 'Entry moved.' : 'Entry copied.'));
-			return;
-		}
-	}
 }
 
 async function moveDocuments(documents, targetDirectory) {
@@ -1513,7 +791,7 @@ async function deleteSelectedDocuments(documents) {
 	}
 
 	appState.selectedFileIds.clear();
-	closeDetailsPanel();
+	detailsPanelController.closeDetailsPanel();
 	await loadPage();
 	setStatus(`Deleted ${documents.length} selected item${documents.length === 1 ? '' : 's'}.`);
 }
@@ -1524,7 +802,7 @@ async function saveAsDocument(fileId) {
 		setStatus('The document could not be found.', true);
 		return;
 	}
-	openFolderTargetDialog('save-as', fileId);
+	folderTargetController.openFolderTargetDialog('save-as', fileId);
 }
 
 async function deleteDocument(fileId) {
@@ -1661,7 +939,7 @@ async function handleContextMenuAction(action, fileId) {
 			await handleFileAction('favorite', fileId);
 			return;
 		case 'details':
-			openDetailsPanel(fileId);
+			detailsPanelController.openDetailsPanel(fileId);
 			return;
 		case 'upload':
 			uploadController.openUploadDialog(documentEntry?.relativePath || '');
@@ -1690,10 +968,10 @@ async function handleContextMenuAction(action, fileId) {
 			await createFolderInDirectory(documentEntry?.relativePath || '');
 			return;
 		case 'move':
-			await openFolderTargetDialog('move', fileId);
+			await folderTargetController.openFolderTargetDialog('move', fileId);
 			return;
 		case 'copy':
-			await openFolderTargetDialog('copy', fileId);
+			await folderTargetController.openFolderTargetDialog('copy', fileId);
 			return;
 		case 'save-as':
 			await saveAsDocument(fileId);
@@ -1717,16 +995,16 @@ async function handleFileAction(action, fileId, mode) {
 				await viewerSessionController.openDocument(fileId, mode || 'edit');
 				return;
 			case 'details':
-				openDetailsPanel(fileId);
+				detailsPanelController.openDetailsPanel(fileId);
 				return;
 			case 'download':
 				window.location.href = `/api/files/${encodeURIComponent(fileId)}/download`;
 				return;
 			case 'copy':
-				await openFolderTargetDialog('copy', fileId);
+				await folderTargetController.openFolderTargetDialog('copy', fileId);
 				break;
 			case 'move':
-				await openFolderTargetDialog('move', fileId);
+				await folderTargetController.openFolderTargetDialog('move', fileId);
 				break;
 			case 'delete':
 				await deleteDocument(fileId);
@@ -1846,12 +1124,12 @@ elements.searchInput.addEventListener('input', applySearchFilter);
 elements.closeViewerButton.addEventListener('click', function() {
 viewerSessionController.closeViewer();
 });
-elements.folderPickerCancel.addEventListener('click', closeFolderTargetDialog);
-elements.folderPickerForm.addEventListener('submit', submitFolderTargetDialog);
-elements.folderPickerName.addEventListener('focus', prepareFolderPickerNameSelection);
+elements.folderPickerCancel.addEventListener('click', folderTargetController.closeFolderTargetDialog);
+elements.folderPickerForm.addEventListener('submit', folderTargetController.submitFolderTargetDialog);
+elements.folderPickerName.addEventListener('focus', folderTargetController.prepareFolderPickerNameSelection);
 elements.folderPickerModal.addEventListener('click', function(event) {
 if (event.target === elements.folderPickerModal) {
-	closeFolderTargetDialog();
+	folderTargetController.closeFolderTargetDialog();
 }
 });
 elements.uploadChooseButton.addEventListener('click', function(event) {
@@ -1952,7 +1230,7 @@ if (!event.target.closest('.context-menu') && !event.target.closest('.menu-butto
 	closeOpenContextMenu();
 }
 });
-elements.closeDetailsPanelButton.addEventListener('click', closeDetailsPanel);
+elements.closeDetailsPanelButton.addEventListener('click', detailsPanelController.closeDetailsPanel);
 elements.selectAllFiles.addEventListener('change', function(event) {
 const visibleDocuments = appState.visibleDocuments.length ? appState.visibleDocuments : appState.documents;
 if (event.target.checked) {
