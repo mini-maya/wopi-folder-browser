@@ -516,10 +516,7 @@ router.post('/files/:fileId/versions/:versionId/restore', async function(req, re
 		if (document.isDirectory) {
 			throw createHttpError(404, 'Folders do not have version history.');
 		}
-		await restoreVersion(getDocumentRoot(req), document, req.params.versionId, {
-			id: user.id,
-			name: user.displayName
-		});
+		await restoreVersion(getDocumentRoot(req), document, req.params.versionId);
 		const updatedDocument = await getDocumentById(getDocumentRoot(req), req.params.fileId);
 		await invalidatePreview(getDocumentRoot(req), updatedDocument);
 		await appendActivity(getDocumentRoot(req), {
