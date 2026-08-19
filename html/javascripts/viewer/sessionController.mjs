@@ -1,3 +1,5 @@
+import { getFileTypeKey } from '../ui/filePreviews.mjs';
+
 export function createViewerSessionController({
 	elements,
 	appState,
@@ -9,8 +11,19 @@ export function createViewerSessionController({
 	defaultViewerTitle,
 	defaultViewerSubtitle
 }) {
+	const FILE_TYPE_CLASS = new Set(['text', 'spreadsheet', 'presentation']);
+
 	function isShareSessionPath() {
 		return window.location.pathname.startsWith('/share/');
+	}
+
+	function setViewerDocumentType(fileDocument) {
+		const typeKey = getFileTypeKey(fileDocument);
+		if (FILE_TYPE_CLASS.has(typeKey)) {
+			document.body.dataset.viewerDocumentType = typeKey;
+			return;
+		}
+		delete document.body.dataset.viewerDocumentType;
 	}
 
 	function setViewerMode(mode) {
@@ -33,6 +46,7 @@ export function createViewerSessionController({
 		elements.accessTokenTtl.value = String(payload.accessTokenTtl);
 		elements.viewerTitle.textContent = `${payload.file.name} (${payload.mode})`;
 		elements.viewerSubtitle.textContent = payload.file.relativePath;
+		setViewerDocumentType(payload.file);
 		appState.viewerPanelWidth = defaultViewerWidth;
 		appState.viewerOpen = true;
 		viewerLayoutController.syncViewerLayout();
@@ -42,6 +56,7 @@ export function createViewerSessionController({
 
 	async function closeViewer() {
 		document.body.classList.remove('editor-fullscreen');
+		delete document.body.dataset.viewerDocumentType;
 		if (isShareSessionPath()) {
 			document.body.classList.add('share-session');
 			elements.closeViewerButton.classList.add('hidden');

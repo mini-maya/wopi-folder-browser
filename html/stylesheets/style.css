@@ -1128,6 +1128,7 @@ tbody tr.selected-row {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+  flex: 1;
   min-width: 0;
 }
 
@@ -1144,8 +1145,10 @@ tbody tr.selected-row {
 
 .activity-item-meta {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.5rem;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
   font-size: 0.75rem;
   color: var(--muted-text);
 }
@@ -1153,6 +1156,10 @@ tbody tr.selected-row {
 .activity-item-user {
   font-weight: 500;
   color: var(--subtle-text);
+}
+
+.activity-item-time {
+  text-align: right;
 }
 
 body.editor-fullscreen,
@@ -1214,11 +1221,36 @@ body.editor-fullscreen #close-viewer-button {
   padding: 0;
   background: var(--primary);
   color: #fff;
+  border: 2px solid rgba(255, 255, 255, 0.55);
   box-shadow: var(--panel-shadow);
 }
 
 body.editor-fullscreen #close-viewer-button:hover {
   background: var(--primary-hover);
+}
+
+body.editor-fullscreen[data-viewer-document-type="text"] #close-viewer-button {
+  background: #4274B0;
+}
+
+body.editor-fullscreen[data-viewer-document-type="text"] #close-viewer-button:hover {
+  background: #2769A0;
+}
+
+body.editor-fullscreen[data-viewer-document-type="spreadsheet"] #close-viewer-button {
+  background: #43721C;
+}
+
+body.editor-fullscreen[data-viewer-document-type="spreadsheet"] #close-viewer-button:hover {
+  background: #2D6514;
+}
+
+body.editor-fullscreen[data-viewer-document-type="presentation"] #close-viewer-button {
+  background: #9C4614;
+}
+
+body.editor-fullscreen[data-viewer-document-type="presentation"] #close-viewer-button:hover {
+  background: #994515;
 }
 
 body.share-session #close-viewer-button {

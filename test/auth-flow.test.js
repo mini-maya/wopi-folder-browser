@@ -1,8 +1,10 @@
 'use strict';
 
 const fs = require('node:fs/promises');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -51,10 +53,32 @@ async function startIsolatedServer() {
 	await fs.mkdir(documentRoot, { recursive: true });
 	await fs.mkdir(stateRoot, { recursive: true });
 
+	const collaboraServer = http.createServer(function(req, res) {
+		if (req.url === '/hosting/discovery') {
+			res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
+			res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<wopi-discovery>
+  <net-zone>
+    <app name="writer">
+      <action ext="odt" name="edit" urlsrc="http://127.0.0.1/cool/edit.html?"/> 
+      <action ext="odt" name="view" urlsrc="http://127.0.0.1/cool/view.html?"/>
+    </app>
+  </net-zone>
+</wopi-discovery>`);
+			return;
+		}
+		res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+		res.end('not found');
+	});
+	await new Promise((resolve) => collaboraServer.listen(0, resolve));
+	const collaboraAddress = collaboraServer.address();
+
 	process.env.DOCUMENT_ROOT = documentRoot;
 	process.env.WOPI_STATE_ROOT = stateRoot;
 	process.env.SESSION_SECRET = 'test-session-secret';
 	process.env.ACCESS_TOKEN_SECRET = 'test-access-token-secret';
+	process.env.COLLABORA_INTERNAL_URL = `http://127.0.0.1:${collaboraAddress.port}`;
+	process.env.COLLABORA_PUBLIC_URL = `http://127.0.0.1:${collaboraAddress.port}`;
 
 	clearRepositoryModules();
 	const app = require('../app');
@@ -64,6 +88,7 @@ async function startIsolatedServer() {
 	return {
 		baseUrl: `http://127.0.0.1:${address.port}`,
 		server,
+		collaboraServer,
 		tempRoot
 	};
 }
@@ -194,6 +219,7 @@ test('setup, authentication, authorization and storage isolation flow', async fu
 		assert.ok(typeof requestResult.payload.generatedPassword === 'string');
 	} finally {
 		await new Promise((resolve, reject) => instance.server.close((error) => (error ? reject(error) : resolve())));
+		await new Promise((resolve, reject) => instance.collaboraServer.close((error) => (error ? reject(error) : resolve())));
 		await fs.rm(instance.tempRoot, { recursive: true, force: true });
 	}
 });
@@ -208,6 +234,69 @@ test('config endpoint exposes the app version', async function() {
 		assert.equal(requestResult.payload.appVersion, require('../package.json').version);
 	} finally {
 		await new Promise((resolve, reject) => instance.server.close((error) => (error ? reject(error) : resolve())));
+		await new Promise((resolve, reject) => instance.collaboraServer.close((error) => (error ? reject(error) : resolve())));
 		await fs.rm(instance.tempRoot, { recursive: true, force: true });
 	}
+});
+
+test('launch activities distinguish open from view', async function() {
+	const instance = await startIsolatedServer();
+	const client = createClient(instance.baseUrl);
+
+	try {
+		let requestResult = await client.request('/api/auth/setup-initial-admin', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
+		});
+		assert.equal(requestResult.response.status, 201);
+
+		requestResult = await client.request('/api/auth/login', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
+		});
+		assert.equal(requestResult.response.status, 200);
+
+		requestResult = await client.request('/api/auth/storage-context', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ context: 'shared' })
+		});
+		assert.equal(requestResult.response.status, 200);
+
+		await fs.writeFile(path.join(instance.tempRoot, 'storage', 'shared', 'launch-activity-demo.odt'), 'demo');
+		requestResult = await client.request('/api/files');
+		assert.equal(requestResult.response.status, 200);
+		const fileEntry = (Array.isArray(requestResult.payload.documents) ? requestResult.payload.documents : [])
+			.find((document) => document.relativePath === 'launch-activity-demo.odt');
+		assert.ok(fileEntry);
+
+		requestResult = await client.request(`/api/files/${encodeURIComponent(fileEntry.id)}/launch?mode=view`);
+		assert.equal(requestResult.response.status, 200);
+
+		requestResult = await client.request(`/api/files/${encodeURIComponent(fileEntry.id)}/launch?mode=edit`);
+		assert.equal(requestResult.response.status, 200);
+
+		requestResult = await client.request('/api/activities?limit=20');
+		assert.equal(requestResult.response.status, 200);
+
+		const launchActivities = (Array.isArray(requestResult.payload.activities) ? requestResult.payload.activities : [])
+			.filter((activityEntry) => activityEntry.fileId === fileEntry.id && (activityEntry.type === 'open' || activityEntry.type === 'view'));
+		assert.deepEqual(launchActivities.map((activityEntry) => activityEntry.type), ['open', 'view']);
+		assert.deepEqual(launchActivities.map((activityEntry) => activityEntry.mode), ['edit', 'view']);
+	} finally {
+		await new Promise((resolve, reject) => instance.server.close((error) => (error ? reject(error) : resolve())));
+		await new Promise((resolve, reject) => instance.collaboraServer.close((error) => (error ? reject(error) : resolve())));
+		await fs.rm(instance.tempRoot, { recursive: true, force: true });
+	}
+});
+
+test('activity labels include a read-only view state', async function() {
+	const moduleUrl = pathToFileURL(path.join(__dirname, '..', 'html', 'javascripts', 'documents', 'activityLabels.mjs')).href;
+	const { getActivityLabel } = await import(moduleUrl);
+
+	assert.equal(getActivityLabel('open'), 'Opened');
+	assert.equal(getActivityLabel('view'), 'Viewed');
+	assert.equal(getActivityLabel('unknown-type'), 'unknown-type');
 });

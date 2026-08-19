@@ -64,7 +64,7 @@ const FEATURE_MATRIX = [
 	{ feature: 'Favorites/Recent', category: 3, note: 'User-scoped state persisted per user id.' },
 	{ feature: 'Public share links (view/edit)', category: 3, note: 'Public share token with server-side validation on WOPI calls.' },
 	{ feature: 'Sharing users/groups/teams ACL', category: 5, note: 'Not available in this sample because no auth/ACL backend exists.' },
-	{ feature: 'Activities', category: 3, note: 'Session-level aggregated activity events persisted in app state.' },
+	{ feature: 'Activities', category: 3, note: 'Session-level aggregated activity events (open/view/edit) persisted in app state.' },
 	{ feature: 'Search integration', category: 4, note: 'Basic file metadata search implemented using existing file listing.' },
 	{ feature: 'Preview generation/cache/indexing queue', category: 3, note: 'Office detail thumbnails are rendered via Collabora convert-to and cached per file version.' },
 	{ feature: 'Admin config + diagnostics', category: 3, note: 'Configuration/diagnostic endpoints implemented.' }
@@ -150,7 +150,7 @@ async function buildLaunchPayload(req, document, mode, shareId, versionId) {
 
 	await addRecent(getDocumentRoot(req), user.id, document.id);
 	await appendActivity(getDocumentRoot(req), {
-		type: 'open',
+		type: mode === 'view' ? 'view' : 'open',
 		fileId: document.id,
 		fileName: document.name,
 		userId: user.id,

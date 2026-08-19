@@ -1,3 +1,5 @@
+import { getActivityLabel } from './activityLabels.mjs';
+
 const OFFICE_THUMBNAIL_EXTENSIONS = new Set([
 	'.doc', '.docx', '.odt',
 	'.xls', '.xlsx', '.ods',
@@ -294,21 +296,6 @@ export function createDetailsPanelController({
 			const allActivities = Array.isArray(payload.activities) ? payload.activities : [];
 			const activities = allActivities.filter((activityEntry) => activityEntry.fileId === fileId);
 
-			const activityLabels = {
-				open: 'Opened',
-				edit: 'Edited',
-				create: 'Created',
-				share: 'Shared',
-				move: 'Moved',
-				copy: 'Copied',
-				rename: 'Renamed',
-				download: 'Downloaded',
-				upload: 'Uploaded',
-				'restore-version': 'Restored version',
-				'delete-version': 'Deleted version',
-				delete: 'Deleted'
-			};
-
 			if (!activities.length) {
 				container.innerHTML = '<div class="tab-empty">No activity recorded yet.</div>';
 				return;
@@ -317,7 +304,7 @@ export function createDetailsPanelController({
 			container.innerHTML = `
 				<ul class="activity-list" aria-label="File activity">
 					${activities.map(function(activityEntry) {
-						const label = activityLabels[activityEntry.type] || activityEntry.type;
+						const label = getActivityLabel(activityEntry.type);
 						const countNote = activityEntry.count && activityEntry.count > 1 ? ` <span class="activity-count">×${activityEntry.count}</span>` : '';
 						return `
 							<li class="activity-item">

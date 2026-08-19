@@ -1,4 +1,4 @@
-function getFileTypeKey(document) {
+export function getFileTypeKey(document) {
 	if (document.isDirectory) {
 		return 'folder';
 	}
