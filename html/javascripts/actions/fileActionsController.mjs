@@ -13,6 +13,11 @@ export function createFileActionsController({
 	onOpenFolderTargetDialog,
 	onOpenDocument
 }) {
+	function isMissingEntry(fileId) {
+		const document = getDocumentById(fileId);
+		return Boolean(document?.isMissingOnDisk);
+	}
+
 	async function showConflictDialog(conflict, operationLabel) {
 		return new Promise((resolve) => {
 			const isDirectoryConflict = conflict?.conflictType === 'directory' || conflict?.source?.type === 'directory' || conflict?.target?.type === 'directory';
@@ -392,10 +397,18 @@ export function createFileActionsController({
 			setStatus('The document could not be found.', true);
 			return;
 		}
+		if (document.isMissingOnDisk) {
+			setStatus('This entry is currently missing on disk. Only details are available.', true);
+			return;
+		}
 		await onOpenFolderTargetDialog('save-as', fileId);
 	}
 
 	async function deleteDocument(fileId) {
+		if (isMissingEntry(fileId)) {
+			setStatus('This entry is currently missing on disk. Only details are available.', true);
+			return;
+		}
 		if (!window.confirm('Recycle this document to bin?')) {
 			return;
 		}
@@ -406,11 +419,19 @@ export function createFileActionsController({
 	}
 
 	async function toggleFavorite(fileId) {
+		if (isMissingEntry(fileId)) {
+			setStatus('This entry is currently missing on disk. Only details are available.', true);
+			return;
+		}
 		const file = appState.documents.find((entry) => entry.id === fileId);
 		await setFavoriteState(fileId, !file.favorite);
 	}
 
 	async function createShare(fileId) {
+		if (isMissingEntry(fileId)) {
+			setStatus('This entry is currently missing on disk. Only details are available.', true);
+			return;
+		}
 		const permission = window.confirm('Create edit share link? Click Cancel for read-only link.') ? 'edit' : 'view';
 		const payload = await requestJson('/api/shares', {
 			method: 'POST',
@@ -450,6 +471,10 @@ export function createFileActionsController({
 
 	async function handleFileAction(action, fileId, mode) {
 		try {
+			if (action !== 'details' && isMissingEntry(fileId)) {
+				setStatus('This entry is currently missing on disk. Only details are available.', true);
+				return;
+			}
 			switch (action) {
 				case 'open':
 					await onOpenDocument(fileId, mode || 'edit');

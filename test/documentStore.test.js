@@ -15,6 +15,7 @@ const {
 	getAvailableName,
 	getDocumentById,
 	listDocuments,
+	pruneMissingDocumentEntries,
 	renameOrMoveDocument,
 	uploadDocuments
 } = require('../lib/documentStore');
@@ -44,6 +45,49 @@ test('listDocuments returns folders and supported files recursively', async func
 	assert.deepEqual(relativePaths, ['demo.docx', 'nested', 'nested/sheet.xlsx']);
 	assert.equal(documents[0].mimeType, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 	assert.equal(documents[1].isDirectory, true);
+});
+
+test('listDocuments keeps registry entries visible when files are missing on disk', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await fs.writeFile(path.join(tempRoot, 'present.odt'), 'present');
+	const stateRoot = getContextStateRoot(tempRoot);
+	await fs.mkdir(stateRoot, { recursive: true });
+	await fs.writeFile(path.join(stateRoot, 'file-registry.json'), JSON.stringify({
+		entries: {
+			'missing-file-id': 'missing-folder/missing.odt'
+		}
+	}, null, 2), 'utf8');
+
+	const documents = await listDocuments(tempRoot);
+	const missingEntry = documents.find((document) => document.id === 'missing-file-id');
+	assert.ok(missingEntry);
+	assert.equal(missingEntry.isMissingOnDisk, true);
+	assert.equal(missingEntry.relativePath, 'missing-folder/missing.odt');
+	assert.equal(missingEntry.isDirectory, false);
+	assert.equal(missingEntry.mimeType, 'application/vnd.oasis.opendocument.text');
+});
+
+test('pruneMissingDocumentEntries removes missing registry-only entries', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await fs.writeFile(path.join(tempRoot, 'present.odt'), 'present');
+	const stateRoot = getContextStateRoot(tempRoot);
+	await fs.mkdir(stateRoot, { recursive: true });
+	await fs.writeFile(path.join(stateRoot, 'file-registry.json'), JSON.stringify({
+		entries: {
+			'present-file-id': 'present.odt',
+			'missing-file-id': 'missing-folder/missing.odt'
+		}
+	}, null, 2), 'utf8');
+
+	const result = await pruneMissingDocumentEntries(tempRoot);
+	assert.equal(result.removed, true);
+	assert.equal(result.missingEntryCount, 1);
+	assert.deepEqual(result.removedFileIds, ['missing-file-id']);
+
+	const registry = JSON.parse(await fs.readFile(path.join(stateRoot, 'file-registry.json'), 'utf8'));
+	assert.deepEqual(registry.entries, {
+		'present-file-id': 'present.odt'
+	});
 });
 
 test('getDocumentById resolves a supported document from its file id', async function() {

@@ -10,6 +10,9 @@ export function createAppBootstrap({
 	viewerSessionController,
 	themeController,
 	loadPage,
+	onRefreshClick,
+	closeMissingEntriesModal,
+	pruneMissingEntriesFromModal,
 	applySearchFilter,
 	closeOpenContextMenu,
 	toggleNewDocumentMenu,
@@ -23,7 +26,7 @@ export function createAppBootstrap({
 		document.addEventListener('pointercancel', viewerLayoutController.stopViewerResize);
 		window.addEventListener('resize', viewerLayoutController.syncViewerLayout);
 
-		elements.refreshButton.addEventListener('click', loadPage);
+		elements.refreshButton.addEventListener('click', onRefreshClick || loadPage);
 		elements.loginButton.addEventListener('click', function() {
 			authController.openLoginModal();
 		});
@@ -148,11 +151,24 @@ export function createAppBootstrap({
 				setStatus(error.message, true);
 			});
 		});
-		elements.adminConsistencyCheckButton.addEventListener('click', function() {
-			authController.runConsistencyCheck().catch(function(error) {
-				setStatus(error.message, true);
+		if (elements.missingEntriesPruneConfirm && elements.missingEntriesPrune) {
+			elements.missingEntriesPruneConfirm.addEventListener('change', function(event) {
+				elements.missingEntriesPrune.disabled = !event.target.checked;
 			});
-		});
+		}
+		if (elements.missingEntriesCancel && closeMissingEntriesModal) {
+			elements.missingEntriesCancel.addEventListener('click', closeMissingEntriesModal);
+		}
+		if (elements.missingEntriesClose && closeMissingEntriesModal) {
+			elements.missingEntriesClose.addEventListener('click', closeMissingEntriesModal);
+		}
+		if (elements.missingEntriesPrune && pruneMissingEntriesFromModal) {
+			elements.missingEntriesPrune.addEventListener('click', function() {
+				pruneMissingEntriesFromModal().catch(function(error) {
+					setStatus(error.message, true);
+				});
+			});
+		}
 		document.addEventListener('click', function(event) {
 			if (!event.target.closest('.context-menu') && !event.target.closest('.menu-button')) {
 				closeOpenContextMenu();
@@ -161,8 +177,9 @@ export function createAppBootstrap({
 		elements.closeDetailsPanelButton.addEventListener('click', detailsPanelController.closeDetailsPanel);
 		elements.selectAllFiles.addEventListener('change', function(event) {
 			const visibleDocuments = appState.visibleDocuments.length ? appState.visibleDocuments : appState.documents;
+			const selectableDocuments = visibleDocuments.filter((document) => !document.isMissingOnDisk);
 			if (event.target.checked) {
-				for (const document of visibleDocuments) {
+				for (const document of selectableDocuments) {
 					appState.selectedFileIds.add(document.id);
 				}
 			} else {
@@ -170,7 +187,7 @@ export function createAppBootstrap({
 					appState.selectedFileIds.delete(document.id);
 				}
 			}
-			documentListController.updateBulkActionState(visibleDocuments);
+			documentListController.updateBulkActionState(selectableDocuments);
 			documentListController.renderCurrentDocumentList();
 		});
 		elements.themeSelect.addEventListener('change', function(event) {

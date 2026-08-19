@@ -46,7 +46,7 @@ function createClient(baseUrl) {
 	};
 }
 
-async function startIsolatedServer() {
+async function startIsolatedServer(options = {}) {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-auth-flow-'));
 	const documentRoot = path.join(tempRoot, 'storage');
 	const stateRoot = path.join(tempRoot, 'state');
@@ -79,7 +79,6 @@ async function startIsolatedServer() {
 	process.env.ACCESS_TOKEN_SECRET = 'test-access-token-secret';
 	process.env.COLLABORA_INTERNAL_URL = `http://127.0.0.1:${collaboraAddress.port}`;
 	process.env.COLLABORA_PUBLIC_URL = `http://127.0.0.1:${collaboraAddress.port}`;
-
 	clearRepositoryModules();
 	const app = require('../app');
 	const server = app.listen(0);
@@ -232,6 +231,61 @@ test('config endpoint exposes the app version', async function() {
 		const requestResult = await client.request('/api/config');
 		assert.equal(requestResult.response.status, 200);
 		assert.equal(requestResult.payload.appVersion, require('../package.json').version);
+	} finally {
+		await new Promise((resolve, reject) => instance.server.close((error) => (error ? reject(error) : resolve())));
+		await new Promise((resolve, reject) => instance.collaboraServer.close((error) => (error ? reject(error) : resolve())));
+		await fs.rm(instance.tempRoot, { recursive: true, force: true });
+	}
+});
+
+test('prune-missing endpoint cleans only missing entries in current context', async function() {
+	const instance = await startIsolatedServer();
+	const client = createClient(instance.baseUrl);
+
+	try {
+		let requestResult = await client.request('/api/auth/setup-initial-admin', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
+		});
+		assert.equal(requestResult.response.status, 201);
+
+		requestResult = await client.request('/api/auth/login', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
+		});
+		assert.equal(requestResult.response.status, 200);
+		requestResult = await client.request('/api/auth/storage-context', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ context: 'shared' })
+		});
+		assert.equal(requestResult.response.status, 200);
+
+		await fs.writeFile(path.join(instance.tempRoot, 'storage', 'shared', 'present.odt'), 'present');
+		const sharedStateRoot = path.join(instance.tempRoot, 'state', 'shared');
+		await fs.mkdir(sharedStateRoot, { recursive: true });
+		await fs.writeFile(path.join(sharedStateRoot, 'file-registry.json'), JSON.stringify({
+			entries: {
+				'present-id': 'present.odt',
+				'missing-id': 'missing-folder/missing.odt'
+			}
+		}, null, 2), 'utf8');
+
+		requestResult = await client.request('/api/files/prune-missing', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({})
+		});
+		assert.equal(requestResult.response.status, 200);
+		assert.equal(requestResult.payload.ok, true);
+		assert.equal(requestResult.payload.removed, true);
+		assert.equal(requestResult.payload.missingEntryCount, 1);
+		assert.deepEqual(requestResult.payload.removedFileIds, ['missing-id']);
+
+		const registry = JSON.parse(await fs.readFile(path.join(sharedStateRoot, 'file-registry.json'), 'utf8'));
+		assert.deepEqual(registry.entries, { 'present-id': 'present.odt' });
 	} finally {
 		await new Promise((resolve, reject) => instance.server.close((error) => (error ? reject(error) : resolve())));
 		await new Promise((resolve, reject) => instance.collaboraServer.close((error) => (error ? reject(error) : resolve())));

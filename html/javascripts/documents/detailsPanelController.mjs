@@ -165,9 +165,29 @@ export function createDetailsPanelController({
 
 	function renderDetailsPanel(document) {
 		const isFolder = isFolderEntry(document);
+		const isMissingOnDisk = Boolean(document.isMissingOnDisk);
 		const folderSizeBytes = isFolder ? getFolderSizeBytes(document, appState.documents) : document.size;
 		const previewClass = isFolder ? 'folder-icon' : '';
 		const favoriteLabel = document.favorite ? '★ Favorite' : '☆ Favorite';
+		if (isMissingOnDisk) {
+			elements.detailsPanelContent.innerHTML = `
+				<div class="details-card">
+					<div class="details-preview">
+						<img class="${previewClass}" src="${getPreviewImage(document)}" alt="${escapeHtml(document.name)} preview">
+					</div>
+					<div class="details-header">
+						<h3>${escapeHtml(document.name)}</h3>
+					</div>
+					<div class="detail-meta">
+						<div class="detail-meta-row"><span>Status</span><strong>Missing on disk</strong></div>
+						<div class="detail-meta-row"><span>Type</span><strong>${isFolder ? 'Folder' : 'File'}</strong></div>
+						<div class="detail-meta-row"><span>Path</span><strong>${escapeHtml(document.relativePath)}</strong></div>
+					</div>
+					<p class="tab-empty tab-error">This entry is currently not available in the filesystem. Only details are shown.</p>
+				</div>
+			`;
+			return;
+		}
 
 		if (isFolder) {
 			const folderActionButtons = `
@@ -238,7 +258,7 @@ export function createDetailsPanelController({
 				handleDetailsAction(button.dataset.action, button.dataset.fileId);
 			});
 		}
-		if (!isFolder) {
+		if (!isFolder && !isMissingOnDisk) {
 			loadOfficeDetailsThumbnail(document);
 		}
 	}
@@ -424,6 +444,10 @@ export function createDetailsPanelController({
 
 	async function handleDetailsAction(action, fileId) {
 		const document = getDocumentById(fileId);
+		if (document?.isMissingOnDisk) {
+			onSetStatus('This entry is currently missing on disk. Only details are available.', true);
+			return;
+		}
 		switch (action) {
 			case 'details-toggle-favorite':
 				await onHandleFileAction('favorite', fileId);

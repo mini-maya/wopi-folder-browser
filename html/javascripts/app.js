@@ -95,6 +95,13 @@ const elements = {
 	adminConsistencyModalContent: document.querySelector('#admin-consistency-modal-content'),
 	adminConsistencyCancel: document.querySelector('#admin-consistency-cancel'),
 	adminUsersBody: document.querySelector('#admin-users-body'),
+	missingEntriesModal: document.querySelector('#missing-entries-modal'),
+	missingEntriesCancel: document.querySelector('#missing-entries-cancel'),
+	missingEntriesClose: document.querySelector('#missing-entries-close'),
+	missingEntriesPrune: document.querySelector('#missing-entries-prune'),
+	missingEntriesPruneConfirm: document.querySelector('#missing-entries-prune-confirm'),
+	missingEntriesSummary: document.querySelector('#missing-entries-summary'),
+	missingEntriesList: document.querySelector('#missing-entries-list'),
 	aboutModal: document.querySelector('#about-modal'),
 	aboutCancel: document.querySelector('#about-cancel'),
 	aboutVersion: document.querySelector('#about-version'),
@@ -649,6 +656,88 @@ async function toggleRecycleView() {
 	await loadPage();
 }
 
+function getMissingDocuments() {
+	return (appState.documents || []).filter((document) => document && document.isMissingOnDisk);
+}
+
+function closeMissingEntriesModal() {
+	if (!elements.missingEntriesModal) {
+		return;
+	}
+	elements.missingEntriesModal.classList.add('hidden');
+	elements.missingEntriesModal.setAttribute('aria-hidden', 'true');
+	if (elements.missingEntriesPruneConfirm) {
+		elements.missingEntriesPruneConfirm.checked = false;
+	}
+	if (elements.missingEntriesPrune) {
+		elements.missingEntriesPrune.disabled = true;
+	}
+}
+
+function openMissingEntriesModal(missingEntries) {
+	if (!elements.missingEntriesModal) {
+		return;
+	}
+	const entries = Array.isArray(missingEntries) ? missingEntries : [];
+	const count = entries.length;
+	if (count === 0) {
+		return;
+	}
+	if (elements.missingEntriesSummary) {
+		elements.missingEntriesSummary.textContent = `${count} missing entr${count === 1 ? 'y' : 'ies'} found in the current storage context.`;
+	}
+	if (elements.missingEntriesList) {
+		const previewEntries = entries.slice(0, 10);
+		const rows = previewEntries.map((entry) => `<tr><td>${escapeHtml(entry.relativePath || entry.name || entry.id)}</td></tr>`).join('');
+		elements.missingEntriesList.innerHTML = `
+			<table class="admin-users-table">
+				<thead><tr><th>Missing path</th></tr></thead>
+				<tbody>${rows}</tbody>
+			</table>
+			${count > previewEntries.length ? `<div class="file-meta">+${count - previewEntries.length} more entries</div>` : ''}
+		`;
+	}
+	if (elements.missingEntriesPruneConfirm) {
+		elements.missingEntriesPruneConfirm.checked = false;
+	}
+	if (elements.missingEntriesPrune) {
+		elements.missingEntriesPrune.disabled = true;
+	}
+	elements.missingEntriesModal.classList.remove('hidden');
+	elements.missingEntriesModal.setAttribute('aria-hidden', 'false');
+	elements.missingEntriesClose.focus();
+}
+
+async function pruneMissingEntries() {
+	const payload = await requestJson('/api/files/prune-missing', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({})
+	});
+	const removedCount = Array.isArray(payload.removedFileIds) ? payload.removedFileIds.length : 0;
+	const checkedCount = Number(payload.missingEntryCount || 0);
+	setStatus(removedCount > 0
+		? `Pruned ${removedCount} stale entr${removedCount === 1 ? 'y' : 'ies'} from ${checkedCount} missing entr${checkedCount === 1 ? 'y' : 'ies'}.`
+		: 'No stale entries were pruned.');
+}
+
+async function pruneMissingEntriesFromModal() {
+	if (!elements.missingEntriesPruneConfirm?.checked) {
+		return;
+	}
+	await pruneMissingEntries();
+	closeMissingEntriesModal();
+	await loadPage();
+}
+
+async function handleRefreshClick() {
+	await loadPage();
+	const missingEntries = getMissingDocuments();
+	if (missingEntries.length > 0) {
+		openMissingEntriesModal(missingEntries);
+	}
+}
+
 async function loadPage() {
 	setStatus('Loading documents...');
 	try {
@@ -759,6 +848,9 @@ const appBootstrap = createAppBootstrap({
 	viewerSessionController: viewerSessionController,
 	themeController: themeController,
 	loadPage: loadPage,
+	onRefreshClick: handleRefreshClick,
+	closeMissingEntriesModal: closeMissingEntriesModal,
+	pruneMissingEntriesFromModal: pruneMissingEntriesFromModal,
 	applySearchFilter: applySearchFilter,
 	closeOpenContextMenu: closeOpenContextMenu,
 	toggleNewDocumentMenu: toggleNewDocumentMenu,
@@ -771,6 +863,11 @@ elements.aboutCancel.addEventListener('click', closeAboutDialog);
 elements.aboutModal.addEventListener('click', function(event) {
 	if (event.target === elements.aboutModal) {
 		closeAboutDialog();
+	}
+});
+elements.missingEntriesModal?.addEventListener('click', function(event) {
+	if (event.target === elements.missingEntriesModal) {
+		closeMissingEntriesModal();
 	}
 });
 appBootstrap.bind();

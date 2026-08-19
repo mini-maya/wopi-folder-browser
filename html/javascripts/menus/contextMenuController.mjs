@@ -63,6 +63,9 @@ export function createContextMenuController({
 		if (fileId && !documentEntry) {
 			return;
 		}
+		if (documentEntry?.isMissingOnDisk && action !== 'details') {
+			return;
+		}
 		if (!fileId && !String(action).startsWith('new-')) {
 			return;
 		}
@@ -158,8 +161,26 @@ export function createContextMenuController({
 		appState.contextMenuFileId = fileId;
 		appState.newDocumentMenuOpen = false;
 		const isFolder = isFolderEntry(documentEntry);
+		const isMissingOnDisk = Boolean(documentEntry.isMissingOnDisk);
 		const menu = document.createElement('div');
 		menu.className = 'context-menu';
+		if (isMissingOnDisk) {
+			menu.innerHTML = `
+				<button type="button" data-context-action="details" data-file-id="${documentEntry.id}">Details</button>
+			`;
+			for (const menuButton of menu.querySelectorAll('[data-context-action][data-file-id]')) {
+				menuButton.addEventListener('click', function(event) {
+					event.preventDefault();
+					event.stopPropagation();
+					closeOpenContextMenu();
+					handleContextMenuAction(menuButton.dataset.contextAction, fileId);
+				});
+			}
+			positionContextMenu(menu, button, 220, 96);
+			document.body.appendChild(menu);
+			button.setAttribute('aria-expanded', 'true');
+			return;
+		}
 		menu.innerHTML = `
 			<button type="button" data-context-action="details" data-file-id="${documentEntry.id}">Details</button>
 			<button type="button" data-context-action="favorite" data-file-id="${documentEntry.id}">${documentEntry.favorite ? 'Remove from favorites' : 'Add to favorites'}</button>

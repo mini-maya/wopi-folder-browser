@@ -17,6 +17,7 @@ const {
   deleteDocument,
   getDocumentById,
   listDocuments,
+  pruneMissingDocumentEntries,
   renameOrMoveDocument,
   SUPPORTED_MIME_TYPES,
   uploadDocuments
@@ -243,6 +244,21 @@ router.get('/files', async function(req, res, next) {
     const documents = await listDocuments(getDocumentRoot(req));
     const userState = await loadUserState(getDocumentRoot(req), user.id);
     res.json({ documents: mapDocumentListWithUserState(documents, userState) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/files/prune-missing', async function(req, res, next) {
+  try {
+    const documentRoot = getDocumentRoot(req);
+    const result = await pruneMissingDocumentEntries(documentRoot);
+    res.json({
+      ok: true,
+      removed: Boolean(result.removed),
+      missingEntryCount: Number(result.missingEntryCount || 0),
+      removedFileIds: Array.isArray(result.removedFileIds) ? result.removedFileIds : []
+    });
   } catch (error) {
     next(error);
   }

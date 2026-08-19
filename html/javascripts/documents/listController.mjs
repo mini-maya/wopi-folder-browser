@@ -27,7 +27,7 @@ export function createDocumentListController({
 	function getBulkSelectedDocuments() {
 		const selectedDocuments = Array.from(appState.selectedFileIds)
 			.map((fileId) => getDocumentById(fileId))
-			.filter(Boolean);
+			.filter((document) => document && !document.isMissingOnDisk);
 		return filterNestedDocuments(selectedDocuments);
 	}
 
@@ -84,8 +84,13 @@ export function createDocumentListController({
 			elements.selectAllFiles.checked = false;
 			return;
 		}
-		const allSelected = documents.every((document) => appState.selectedFileIds.has(document.id));
-		elements.selectAllFiles.checked = documents.length > 0 && allSelected;
+		const selectableDocuments = documents.filter((document) => !document.isMissingOnDisk);
+		if (!selectableDocuments.length) {
+			elements.selectAllFiles.checked = false;
+			return;
+		}
+		const allSelected = selectableDocuments.every((document) => appState.selectedFileIds.has(document.id));
+		elements.selectAllFiles.checked = allSelected;
 	}
 
 	function collapseFolderAndDescendants(folderId) {
@@ -170,6 +175,7 @@ export function createDocumentListController({
 	function renderDocumentRow(document, depth) {
 		const isSelected = appState.selectedFileIds.has(document.id);
 		const isFolder = isFolderEntry(document);
+		const isMissingOnDisk = Boolean(document.isMissingOnDisk);
 		const isExpanded = isFolder && appState.expandedFolderIds.has(document.id);
 		const previewUrl = isFolder
 			? buildFolderPictogramSvg({
@@ -180,10 +186,13 @@ export function createDocumentListController({
 			})
 			: buildFilePreviewSvg(document);
 		const toggleLabel = isExpanded ? 'Collapse folder' : 'Expand folder';
+		const modifiedLabel = isMissingOnDisk ? '—' : formatDate(document.updatedAt);
+		const sizeLabel = isMissingOnDisk ? '—' : (isFolder ? '—' : formatBytes(document.size));
 		return `
-		<tr class="${isSelected ? 'selected-row' : ''} ${isFolder ? 'tree-folder-row' : 'tree-file-row'}" data-file-id="${document.id}" data-tree-depth="${depth}" data-is-folder="${isFolder}">
+		<tr class="${isSelected ? 'selected-row' : ''} ${isFolder ? 'tree-folder-row' : 'tree-file-row'} ${isMissingOnDisk ? 'missing-entry-row' : ''}" data-file-id="${document.id}" data-tree-depth="${depth}" data-is-folder="${isFolder}">
 			<td class="select-cell">
-				<input type="checkbox" class="file-select-checkbox" data-file-id="${document.id}" ${isSelected ? 'checked' : ''} aria-label="Select ${escapeHtml(document.name)}">
+				<input type="checkbox" class="file-select-checkbox" data-file-id="${document.id}" ${isSelected ? 'checked' : ''} ${isMissingOnDisk ? 'disabled' : ''} aria-label="Select ${escapeHtml(document.name)}${isMissingOnDisk ? ' (missing on disk)' : ''}">
+				${isMissingOnDisk ? '<span class="missing-entry-indicator" title="File or folder is currently missing on disk" aria-label="Missing on disk">!</span>' : ''}
 			</td>
 			<td class="tree-name-cell">
 				<div class="file-row-main tree-row-main" style="padding-left: ${depth * 2.95}rem">
@@ -195,11 +204,11 @@ export function createDocumentListController({
 				</div>
 			</td>
 			<td>${escapeHtml(document.relativePath.split('/').filter(Boolean).join(' / '))}</td>
-			<td>${formatDate(document.updatedAt)}</td>
-			<td>${isFolder ? '—' : formatBytes(document.size)}</td>
+			<td>${modifiedLabel}</td>
+			<td>${sizeLabel}</td>
 			<td>
 				<div class="actions actions-inline">
-					${isFolder ? '' : '<button type="button" data-action="open" data-mode="edit" data-file-id="'+document.id+'">Open</button><button type="button" class="secondary" data-action="open" data-mode="view" data-file-id="'+document.id+'">View</button>'}
+					${isFolder || isMissingOnDisk ? '' : '<button type="button" data-action="open" data-mode="edit" data-file-id="'+document.id+'">Open</button><button type="button" class="secondary" data-action="open" data-mode="view" data-file-id="'+document.id+'">View</button>'}
 					<button type="button" class="secondary menu-button" data-action="context-menu" data-file-id="${document.id}" aria-label="Open file actions">⋯</button>
 				</div>
 			</td>
