@@ -100,7 +100,7 @@ The Compose file already wires the important variables:
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `DOCUMENTS_HOST_PATH` | Host folder mounted into the app container | `./example-documents` |
-| `WOPI_STATE_ROOT` | Dedicated folder for persistent runtime state | `./wopi-state` |
+| `WOPI_STATE_ROOT` | Dedicated folder for persistent runtime state; app-global state under `common`, document state under `shared` or `users/<userId>` | `./wopi-state` |
 | `APP_BASE_URL` | Collabora-reachable base URL used for `WOPISrc` callbacks | `http://app:3000` |
 | `COLLABORA_INTERNAL_URL` | URL used by the app container to fetch discovery | `http://collabora:9980` |
 | `COLLABORA_PUBLIC_URL` | Browser-visible Collabora URL used inside the iframe | `http://localhost:9980` |
@@ -108,7 +108,7 @@ The Compose file already wires the important variables:
 | `SESSION_SECRET` | Secret used to sign browser session cookies | `change-me-session-secret` |
 | `PASSWORD_MIN_LENGTH` | Minimum password length for setup/admin/user password flows | `12` |
 
-`WOPI_STATE_ROOT` is the key setting that moves the hidden `.wopi-state` directory out of the documents tree. In Docker Compose it is usually mounted separately, for example:
+`WOPI_STATE_ROOT` moves the runtime state out of the documents tree. The app keeps app-global state under `<WOPI_STATE_ROOT>/common` and splits document state into `<WOPI_STATE_ROOT>/shared` and `<WOPI_STATE_ROOT>/users/<userId>`, so registries and cache files are not mixed across users. In Docker Compose it is usually mounted separately, for example:
 
 ```yaml
 services:

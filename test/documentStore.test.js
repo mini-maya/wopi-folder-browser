@@ -18,7 +18,7 @@ const {
 	renameOrMoveDocument,
 	uploadDocuments
 } = require('../lib/documentStore');
-const { getStateRoot } = require('../lib/statePaths');
+const { getCommonStateRoot, getContextStateRoot, getStateRoot } = require('../lib/statePaths');
 
 test('listDocuments returns folders and supported files recursively', async function() {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
@@ -277,14 +277,49 @@ test('uploadDocuments rejects an unknown target folder', async function() {
 	}, /The target folder does not exist/);
 });
 
-test('getStateRoot uses a dedicated state directory when configured', function() {
+test('getContextStateRoot keeps shared document state under shared when configured', function() {
 	const tempRoot = path.join(os.tmpdir(), 'wopi-folder-browser-state-root-test');
 	const customStateRoot = path.join(tempRoot, 'state-root');
 	const previousValue = process.env.WOPI_STATE_ROOT;
 	process.env.WOPI_STATE_ROOT = customStateRoot;
 
 	try {
-		assert.equal(getStateRoot(tempRoot), customStateRoot);
+		assert.equal(getContextStateRoot(tempRoot), path.join(customStateRoot, 'shared'));
+	} finally {
+		if (previousValue === undefined) {
+			delete process.env.WOPI_STATE_ROOT;
+		} else {
+			process.env.WOPI_STATE_ROOT = previousValue;
+		}
+	}
+});
+
+test('getContextStateRoot keeps personal document state isolated under users/<userId>', function() {
+	const tempRoot = path.join(os.tmpdir(), 'wopi-folder-browser-user-state-root-test');
+	const customStateRoot = path.join(tempRoot, 'state-root');
+	const userRoot = path.join(tempRoot, 'users', 'user-42');
+	const previousValue = process.env.WOPI_STATE_ROOT;
+	process.env.WOPI_STATE_ROOT = customStateRoot;
+
+	try {
+		assert.equal(getContextStateRoot(userRoot), path.join(customStateRoot, 'users', 'user-42'));
+	} finally {
+		if (previousValue === undefined) {
+			delete process.env.WOPI_STATE_ROOT;
+		} else {
+			process.env.WOPI_STATE_ROOT = previousValue;
+		}
+	}
+});
+
+test('getCommonStateRoot keeps app-global state under common', function() {
+	const tempRoot = path.join(os.tmpdir(), 'wopi-folder-browser-common-state-root-test');
+	const customStateRoot = path.join(tempRoot, 'state-root');
+	const previousValue = process.env.WOPI_STATE_ROOT;
+	process.env.WOPI_STATE_ROOT = customStateRoot;
+
+	try {
+		assert.equal(getCommonStateRoot(tempRoot), path.join(customStateRoot, 'common'));
 	} finally {
 		if (previousValue === undefined) {
 			delete process.env.WOPI_STATE_ROOT;
