@@ -15,6 +15,7 @@ import { createThemeController } from './ui/themeController.mjs';
 import { createViewerLayoutController } from './viewer/layoutController.mjs';
 import { createViewerSessionController } from './viewer/sessionController.mjs';
 import { createAppBootstrap } from './app/bootstrap.mjs';
+import { clearSelectionAndDetailState, resetFilesViewState } from './state/viewState.mjs';
 
 const elements = {
 	layout: document.querySelector('#app-layout'),
@@ -36,6 +37,7 @@ const elements = {
 	bulkActionsMenuButton: document.querySelector('#bulk-menu-button'),
 	viewerFrame: document.querySelector('#collabora-online-viewer'),
 	refreshButton: document.querySelector('#refresh-button'),
+	recycleButton: document.querySelector('#recycle-button'),
 	newMenuButton: document.querySelector('#new-menu-button'),
 	uploadButton: document.querySelector('#upload-button'),
 	myFilesButton: document.querySelector('#my-files-button'),
@@ -86,10 +88,18 @@ const elements = {
 	adminCreatePassword: document.querySelector('#admin-create-password'),
 	adminCreateGeneratePassword: document.querySelector('#admin-create-generate-password'),
 	adminGeneratedPassword: document.querySelector('#admin-generated-password'),
+	adminConsistencyAllContexts: document.querySelector('#admin-consistency-all-contexts'),
+	adminConsistencyCheckButton: document.querySelector('#admin-consistency-check-button'),
+	adminConsistencyReport: document.querySelector('#admin-consistency-report'),
+	adminConsistencyModal: document.querySelector('#admin-consistency-modal'),
+	adminConsistencyModalContent: document.querySelector('#admin-consistency-modal-content'),
+	adminConsistencyCancel: document.querySelector('#admin-consistency-cancel'),
 	adminUsersBody: document.querySelector('#admin-users-body'),
 	aboutModal: document.querySelector('#about-modal'),
 	aboutCancel: document.querySelector('#about-cancel'),
-	aboutVersion: document.querySelector('#about-version')
+	aboutVersion: document.querySelector('#about-version'),
+	columnPath: document.querySelector('#column-path'),
+	columnDate: document.querySelector('#column-date')
 };
 
 const appState = {
@@ -97,6 +107,7 @@ const appState = {
 	visibleDocuments: [],
 	config: null,
 	themeMode: 'auto',
+	currentView: 'files',
 	selectedFileIds: new Set(),
 	expandedFolderIds: new Set(),
 	folderPickerAction: null,
@@ -122,6 +133,7 @@ const appState = {
 		storageContext: 'shared'
 	},
 	adminUsers: [],
+	recycleEntries: [],
 	applyConflictToAll: false,
 	integrationPendingData: null,
 	activeDetailTab: 'share',
@@ -155,8 +167,28 @@ function setStatus(message, isError = false) {
 	elements.statusMessage.classList.toggle('error', isError);
 }
 
+function syncRecycleButtonState() {
+	if (!elements.recycleButton) {
+		return;
+	}
+	const recycleCount = Array.isArray(appState.recycleEntries) ? appState.recycleEntries.length : 0;
+	const recycleCountElement = elements.recycleButton.querySelector('[data-recycle-count]');
+	if (recycleCountElement) {
+		recycleCountElement.textContent = String(recycleCount);
+		recycleCountElement.hidden = recycleCount === 0;
+	}
+	elements.recycleButton.classList.toggle('is-active', appState.currentView === 'recycle');
+	elements.recycleButton.setAttribute('aria-pressed', appState.currentView === 'recycle' ? 'true' : 'false');
+	elements.recycleButton.setAttribute('aria-label', recycleCount === 0 ? 'Recycle Bin' : `Recycle Bin, ${recycleCount} items`);
+	elements.recycleButton.title = recycleCount === 0 ? 'Recycle Bin' : `Recycle Bin (${recycleCount})`;
+}
+
 let fileActionsController = null;
 let contextMenuController = null;
+
+function getRecycleEntryById(entryId) {
+	return appState.recycleEntries.find((entry) => entry.id === entryId) || null;
+}
 
 async function handleFileAction(action, fileId, mode) {
 	if (!fileActionsController) {
@@ -177,6 +209,170 @@ async function deleteDocument(fileId) {
 		return;
 	}
 	await fileActionsController.deleteDocument(fileId);
+}
+
+async function openRecycleEntryDetails(entryId) {
+	const entry = getRecycleEntryById(entryId);
+	if (!entry) {
+		return;
+	}
+	const fallbackPreviewSrc = buildFilePreviewSvg({ mimeType: entry.mimeType || '' });
+	elements.detailsPanel.classList.remove('hidden');
+	elements.detailsPanelContent.innerHTML = `
+		<div class="details-card">
+			<div class="details-preview">
+				<img src="${fallbackPreviewSrc}" alt="${escapeHtml(entry.originalName || 'recycled file')} preview">
+			</div>
+			<div class="details-header">
+				<h3>${escapeHtml(entry.originalName || 'Recovered file')}</h3>
+			</div>
+			<div class="detail-meta">
+				<div class="detail-meta-row"><span>Original path</span><strong>${escapeHtml(entry.originalPath || '')}</strong></div>
+				<div class="detail-meta-row"><span>Deleted at</span><strong>${formatDate(entry.deletedAt)}</strong></div>
+				<div class="detail-meta-row"><span>Size</span><strong>${entry.versionSize != null ? formatBytes(entry.versionSize) : '—'}</strong></div>
+			</div>
+			<div class="details-actions">
+				<button type="button" class="secondary" data-recycle-action="restore" data-entry-id="${entry.id}">Restore</button>
+				<button type="button" class="danger" data-recycle-action="delete-finally" data-entry-id="${entry.id}">Delete finally</button>
+			</div>
+		</div>
+	`;
+	const previewImage = elements.detailsPanelContent.querySelector('.details-preview img');
+	if (previewImage && entry.thumbnailUrl) {
+		previewImage.addEventListener('error', function handleRecyclePreviewError() {
+			previewImage.src = fallbackPreviewSrc;
+			previewImage.removeEventListener('error', handleRecyclePreviewError);
+		});
+		previewImage.src = entry.thumbnailUrl;
+	}
+	for (const button of elements.detailsPanelContent.querySelectorAll('[data-recycle-action]')) {
+		button.addEventListener('click', async function() {
+			await handleRecycleAction(button.dataset.recycleAction, button.dataset.entryId);
+		});
+	}
+}
+
+function closeActiveDetailsPanel() {
+	appState.activeDetailFileId = null;
+	elements.detailsPanel.classList.add('hidden');
+}
+
+async function handleRecycleAction(action, entryId) {
+	const entry = getRecycleEntryById(entryId);
+	if (!entry) {
+		return;
+	}
+	if (action === 'details') {
+		await openRecycleEntryDetails(entryId);
+		return;
+	}
+	if (action === 'restore') {
+		try {
+			await requestJson(`/api/recycle/${encodeURIComponent(entryId)}/restore`, { method: 'POST' });
+			await loadPage();
+			closeActiveDetailsPanel();
+			setStatus('Restored successfully.');
+		} catch (error) {
+			if (error?.payload?.error === 'FILE_CONFLICT' && fileActionsController?.showConflictDialog) {
+				const resolution = await fileActionsController.showConflictDialog(error.payload, 'Restore');
+				if (!resolution) {
+					return;
+				}
+				try {
+					const retryResult = await requestJson(`/api/recycle/${encodeURIComponent(entryId)}/restore`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ conflictResolution: resolution })
+					});
+					await loadPage();
+					if (!retryResult?.skipped) {
+						closeActiveDetailsPanel();
+					}
+					setStatus(retryResult?.skipped ? 'Restore skipped.' : 'Restored successfully.');
+				} catch (retryError) {
+					setStatus(retryError.message, true);
+				}
+				return;
+			}
+			setStatus(error.message, true);
+		}
+		return;
+	}
+	if (action === 'delete-finally') {
+		if (!window.confirm('Delete this document permanently?')) {
+			return;
+		}
+		try {
+			await requestJson(`/api/recycle/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
+			await loadPage();
+			closeActiveDetailsPanel();
+			setStatus('Deleted permanently.');
+		} catch (error) {
+			setStatus(error.message, true);
+		}
+	}
+}
+
+async function handleRecycleBulkAction(action) {
+	const selectedIds = Array.from(appState.selectedFileIds);
+	if (!selectedIds.length) {
+		return;
+	}
+	const count = selectedIds.length;
+	const label = count === 1 ? '1 item' : `${count} items`;
+	if (action === 'restore') {
+		try {
+			let skippedCount = 0;
+			for (const id of selectedIds) {
+				try {
+					const result = await requestJson(`/api/recycle/${encodeURIComponent(id)}/restore`, { method: 'POST' });
+					if (result?.skipped) {
+						skippedCount++;
+					}
+				} catch (error) {
+					if (error?.payload?.error === 'FILE_CONFLICT' && fileActionsController?.showConflictDialog) {
+						const resolution = await fileActionsController.showConflictDialog(error.payload, 'Restore');
+						if (!resolution) {
+							skippedCount++;
+							continue;
+						}
+						const retryResult = await requestJson(`/api/recycle/${encodeURIComponent(id)}/restore`, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({ conflictResolution: resolution })
+						});
+						if (retryResult?.skipped) {
+							skippedCount++;
+						}
+					} else {
+						setStatus(error.message, true);
+						return;
+					}
+				}
+			}
+			appState.selectedFileIds.clear();
+			await loadPage();
+			setStatus(skippedCount > 0 ? `Restored ${count - skippedCount} of ${label}.` : `Restored ${label}.`);
+		} catch (error) {
+			setStatus(error.message, true);
+		}
+		return;
+	}
+	if (action === 'delete-finally') {
+		if (!window.confirm(`Permanently delete ${label}?`)) {
+			return;
+		}
+		try {
+			for (const id of selectedIds) {
+				await requestJson(`/api/recycle/${encodeURIComponent(id)}`, { method: 'DELETE' });
+			}
+			appState.selectedFileIds.clear();
+			await loadPage();
+			setStatus(`Deleted ${label} permanently.`);
+		} catch (error) {
+			setStatus(error.message, true);
+		}
+	}
 }
 
 async function saveAsDocument(fileId) {
@@ -252,6 +448,9 @@ const authController = createAuthController({
 	requestJson: requestJson,
 	formatDate: formatDate,
 	setStatus: setStatus,
+	resetFilesViewState: function() {
+		resetFilesViewState(appState);
+	},
 	loadPage: async function() {
 		await loadPage();
 	},
@@ -276,7 +475,8 @@ const documentListController = createDocumentListController({
 	formatBytes: formatBytes,
 	onCloseOpenContextMenu: closeOpenContextMenu,
 	onShowContextMenu: showContextMenu,
-	onHandleFileAction: handleFileAction
+	onHandleFileAction: handleFileAction,
+	onHandleRecycleAction: handleRecycleAction
 });
 
 const detailsPanelController = createDetailsPanelController({
@@ -298,6 +498,7 @@ const detailsPanelController = createDetailsPanelController({
 		await folderTargetController.openFolderTargetDialog(action, fileIds);
 	},
 	onDeleteDocument: deleteDocument,
+	onHandleRecycleAction: handleRecycleAction,
 	onLoadPage: async function() {
 		await loadPage();
 	},
@@ -396,8 +597,13 @@ contextMenuController = createContextMenuController({
 	getBulkSelectedDocuments: function() {
 		return documentListController.getBulkSelectedDocuments();
 	},
+	getBulkSelectedRecycleEntries: function() {
+		return documentListController.getBulkSelectedRecycleEntries();
+	},
 	isFolderEntry: isFolderEntry,
 	onHandleFileAction: handleFileAction,
+	onHandleRecycleAction: handleRecycleAction,
+	onHandleRecycleBulkAction: handleRecycleBulkAction,
 	onOpenDetailsPanel: function(fileId) {
 		detailsPanelController.openDetailsPanel(fileId);
 	},
@@ -431,20 +637,45 @@ function applySearchFilter() {
 	documentListController.renderCurrentDocumentList();
 }
 
+async function toggleRecycleView() {
+	if (!appState.auth?.authenticated) {
+		appState.currentView = 'files';
+		documentListController.renderCurrentDocumentList();
+		syncRecycleButtonState();
+		return;
+	}
+	appState.currentView = appState.currentView === 'recycle' ? 'files' : 'recycle';
+	clearSelectionAndDetailState(appState);
+	await loadPage();
+}
+
 async function loadPage() {
 	setStatus('Loading documents...');
 	try {
-		const [authState, config, fileList] = await Promise.all([
+		const [authState, config, filesResponse] = await Promise.all([
 			requestJson('/api/auth/me'),
 			requestJson('/api/config'),
 			requestJson('/api/files')
 		]);
 
+		const storageContext = authState.storageContext || config.storageContext || 'shared';
 		appState.auth = authState;
 		appState.config = config;
-		appState.documents = fileList.documents;
+		appState.auth.storageContext = storageContext;
+		if (!authState.authenticated) {
+			appState.currentView = 'files';
+		}
+		if (appState.currentView === 'recycle' && !authState.authenticated) {
+			appState.currentView = 'files';
+		}
+		const recycleResponse = authState.authenticated
+			? await requestJson('/api/recycle')
+			: { entries: [] };
+		const loadedDocuments = Array.isArray(filesResponse.documents) ? filesResponse.documents : [];
+		const loadedRecycleEntries = Array.isArray(recycleResponse.entries) ? recycleResponse.entries : [];
+		appState.documents = loadedDocuments;
+		appState.recycleEntries = loadedRecycleEntries;
 		detailsPanelController.syncDetailThumbnailCacheWithDocuments();
-		appState.auth.storageContext = config.storageContext || appState.auth.storageContext || 'shared';
 		authController.applyPasswordPolicyToForms(config.passwordMinLength);
 		authController.renderAuthControls();
 		elements.aboutVersion.textContent = config.appVersion || 'Unknown';
@@ -452,7 +683,9 @@ async function loadPage() {
 		elements.appBaseUrl.textContent = config.appBaseUrl;
 		elements.collaboraUrl.textContent = config.collaboraPublicUrl;
 		documentListController.renderCurrentDocumentList();
-		setStatus(`Loaded ${fileList.documents.length} entr${fileList.documents.length === 1 ? 'y' : 'ies'}.`);
+		syncRecycleButtonState();
+		const count = appState.currentView === 'recycle' ? appState.recycleEntries.length : appState.documents.length;
+		setStatus(`Loaded ${count} entr${count === 1 ? 'y' : 'ies'}.`);
 	} catch (error) {
 		documentListController.renderEmptyState();
 		setStatus(error.message, true);
@@ -532,6 +765,7 @@ const appBootstrap = createAppBootstrap({
 	toggleBulkActionsMenu: toggleBulkActionsMenu,
 	setStatus: setStatus
 });
+elements.recycleButton?.addEventListener('click', toggleRecycleView);
 elements.aboutButton.addEventListener('click', openAboutDialog);
 elements.aboutCancel.addEventListener('click', closeAboutDialog);
 elements.aboutModal.addEventListener('click', function(event) {

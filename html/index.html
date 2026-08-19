@@ -56,8 +56,8 @@
            </svg>
          </button>
          <div id="auth-controls" class="auth-controls">
-           <button id="my-files-button" type="button" class="secondary hidden">My Files</button>
-           <button id="shared-files-button" type="button" class="secondary hidden">Shared Files</button>
+           <button id="my-files-button" type="button" class="secondary hidden storage-toggle">My Files</button>
+           <button id="shared-files-button" type="button" class="secondary hidden storage-toggle">Shared Files</button>
            <button id="admin-button" type="button" class="secondary hidden">Administration</button>
            <button id="account-button" type="button" class="secondary hidden">Account</button>
            <button id="login-button" type="button" class="secondary">Login</button>
@@ -93,6 +93,13 @@
        <div class="bulk-actions-primary">
          <button id="new-menu-button" type="button" class="secondary menu-button" aria-haspopup="menu" aria-expanded="false">New...</button>
          <button id="upload-button" type="button" class="secondary">Upload...</button>
+         <button id="recycle-button" type="button" class="secondary hidden recycle-toggle" aria-pressed="false">
+           <svg class="recycle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+             <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h4v10h-4V9zm-6 0h2l1 11h8l1-11h2l-1 13H5L4 9z" fill="currentColor"/>
+           </svg>
+           <span class="recycle-toggle-label">Recycle Bin</span>
+           <span class="entry-badge recycle-count" data-recycle-count>0</span>
+         </button>
        </div>
        <div class="bulk-actions-secondary">
          <span id="selection-summary" class="hidden">0 selected</span>
@@ -120,8 +127,8 @@
                <input id="select-all-files" type="checkbox" aria-label="Select all files">
              </th>
              <th>Name</th>
-             <th>Path</th>
-             <th>Modified</th>
+             <th id="column-path">Path</th>
+             <th id="column-date">Modified</th>
              <th>Size</th>
              <th>Actions</th>
            </tr>
@@ -309,6 +316,36 @@
            </table>
          </div>
        </section>
+
+       <section class="admin-section">
+         <h4>JSON / Filesystem consistency</h4>
+         <label class="modal-field checkbox-field">
+           <span>
+             <input id="admin-consistency-all-contexts" type="checkbox">
+             Check all storage contexts
+           </span>
+         </label>
+         <div class="admin-consistency-actions">
+           <button id="admin-consistency-check-button" type="button" class="secondary">Check documents ↔ JSON state</button>
+         </div>
+         <div id="admin-consistency-report" class="admin-consistency-report hidden" aria-live="polite"></div>
+       </section>
+     </div>
+   </div>
+ </div>
+
+ <div id="admin-consistency-modal" class="modal hidden" aria-hidden="true">
+   <div class="modal-card admin-consistency-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-consistency-modal-title">
+     <div class="modal-header">
+       <h3 id="admin-consistency-modal-title">Document consistency</h3>
+       <button id="admin-consistency-cancel" type="button" class="secondary icon-button" aria-label="Close consistency dialog">
+         <svg class="close-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+           <path d="M7 7L17 17M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+         </svg>
+       </button>
+     </div>
+     <div class="modal-body">
+       <div id="admin-consistency-modal-content" class="admin-consistency-modal-content" aria-live="polite"></div>
      </div>
    </div>
  </div>

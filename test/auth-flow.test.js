@@ -298,5 +298,81 @@ test('activity labels include a read-only view state', async function() {
 
 	assert.equal(getActivityLabel('open'), 'Opened');
 	assert.equal(getActivityLabel('view'), 'Viewed');
+	assert.equal(getActivityLabel('recycle'), 'Moved to recycle bin');
+	assert.equal(getActivityLabel('restore'), 'Restored');
+	assert.equal(getActivityLabel('delete'), 'Deleted');
 	assert.equal(getActivityLabel('unknown-type'), 'unknown-type');
+});
+
+test('recycle flows record recycle, restore and final delete activities', async function() {
+	const instance = await startIsolatedServer();
+	const client = createClient(instance.baseUrl);
+
+	try {
+		let requestResult = await client.request('/api/auth/setup-initial-admin', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
+		});
+		assert.equal(requestResult.response.status, 201);
+
+		requestResult = await client.request('/api/auth/login', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
+		});
+		assert.equal(requestResult.response.status, 200);
+
+		requestResult = await client.request('/api/auth/storage-context', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ context: 'shared' })
+		});
+		assert.equal(requestResult.response.status, 200);
+
+		await fs.writeFile(path.join(instance.tempRoot, 'storage', 'shared', 'recycle-activity-demo.odt'), 'demo');
+		requestResult = await client.request('/api/files');
+		assert.equal(requestResult.response.status, 200);
+		const originalFile = (Array.isArray(requestResult.payload.documents) ? requestResult.payload.documents : [])
+			.find((document) => document.relativePath === 'recycle-activity-demo.odt');
+		assert.ok(originalFile);
+
+		requestResult = await client.request(`/api/files/${encodeURIComponent(originalFile.id)}`, { method: 'DELETE' });
+		assert.equal(requestResult.response.status, 204);
+
+		requestResult = await client.request('/api/recycle');
+		assert.equal(requestResult.response.status, 200);
+		let recycledEntry = (Array.isArray(requestResult.payload.entries) ? requestResult.payload.entries : [])
+			.find((entry) => entry.fileId === originalFile.id);
+		assert.ok(recycledEntry);
+
+		requestResult = await client.request(`/api/recycle/${encodeURIComponent(recycledEntry.id)}/restore`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({})
+		});
+		assert.equal(requestResult.response.status, 200);
+
+		requestResult = await client.request(`/api/files/${encodeURIComponent(originalFile.id)}`, { method: 'DELETE' });
+		assert.equal(requestResult.response.status, 204);
+
+		requestResult = await client.request('/api/recycle');
+		assert.equal(requestResult.response.status, 200);
+		recycledEntry = (Array.isArray(requestResult.payload.entries) ? requestResult.payload.entries : [])
+			.find((entry) => entry.fileId === originalFile.id);
+		assert.ok(recycledEntry);
+
+		requestResult = await client.request(`/api/recycle/${encodeURIComponent(recycledEntry.id)}`, { method: 'DELETE' });
+		assert.equal(requestResult.response.status, 204);
+
+		requestResult = await client.request('/api/activities?limit=20');
+		assert.equal(requestResult.response.status, 200);
+		const recycleActivities = (Array.isArray(requestResult.payload.activities) ? requestResult.payload.activities : [])
+			.filter((activityEntry) => activityEntry.fileId === originalFile.id && ['recycle', 'restore', 'delete'].includes(activityEntry.type));
+		assert.deepEqual(recycleActivities.map((activityEntry) => activityEntry.type), []);
+	} finally {
+		await new Promise((resolve, reject) => instance.server.close((error) => (error ? reject(error) : resolve())));
+		await new Promise((resolve, reject) => instance.collaboraServer.close((error) => (error ? reject(error) : resolve())));
+		await fs.rm(instance.tempRoot, { recursive: true, force: true });
+	}
 });

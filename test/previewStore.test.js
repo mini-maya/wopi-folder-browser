@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 
 const {
 	getCachedThumbnail,
+	getThumbnailPublicUrl,
 	invalidatePreview,
 	resolveThumbnailAbsolutePath,
 	storeThumbnail
@@ -36,6 +37,11 @@ test('storeThumbnail persists the current preview for a file version', async fun
 	assert.equal(cached.width, 1);
 	assert.equal(cached.height, 1);
 	assert.equal(await resolveThumbnailAbsolutePath(tempRoot, 'file-1', '7'), cached.absolutePath);
+});
+
+test('getThumbnailPublicUrl builds the preview URL from file id and version', function() {
+	assert.equal(getThumbnailPublicUrl('file-2', '8'), '/api/thumbnails/file-2/8');
+	assert.equal(getThumbnailPublicUrl('file-2', '1787136501718-2048'), '/api/thumbnails/file-2/1787136501718-2048');
 });
 
 test('invalidatePreview removes the current preview for a file', async function() {

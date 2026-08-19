@@ -2,6 +2,7 @@ export function createContextMenuController({
 	appState,
 	getDocumentById,
 	getBulkSelectedDocuments,
+	getBulkSelectedRecycleEntries,
 	isFolderEntry,
 	onHandleFileAction,
 	onOpenDetailsPanel,
@@ -11,6 +12,8 @@ export function createContextMenuController({
 	onOpenFolderTargetDialog,
 	onSaveAsDocument,
 	onDeleteDocument,
+	onHandleRecycleAction,
+	onHandleRecycleBulkAction,
 	onLoadPage,
 	onHandleBulkAction
 }) {
@@ -52,6 +55,10 @@ export function createContextMenuController({
 	}
 
 	async function handleContextMenuAction(action, fileId) {
+		if (appState.currentView === 'recycle') {
+			await onHandleRecycleAction(action, fileId);
+			return;
+		}
 		const documentEntry = fileId ? getDocumentById(fileId) : null;
 		if (fileId && !documentEntry) {
 			return;
@@ -115,6 +122,34 @@ export function createContextMenuController({
 	}
 
 	async function showContextMenu(fileId, button) {
+		if (appState.currentView === 'recycle') {
+			closeOpenContextMenu();
+			appState.contextMenuFileId = fileId;
+			const entry = (appState.recycleEntries || []).find((recycleEntry) => recycleEntry.id === fileId);
+			if (!entry) {
+				return;
+			}
+			const menu = document.createElement('div');
+			menu.className = 'context-menu';
+			menu.innerHTML = `
+				<button type="button" data-context-action="details" data-file-id="${entry.id}">Details</button>
+				<button type="button" data-context-action="restore" data-file-id="${entry.id}">Restore</button>
+				<div class="context-menu-separator"></div>
+				<button type="button" class="danger" data-context-action="delete-finally" data-file-id="${entry.id}">Delete finally</button>
+			`;
+			for (const menuButton of menu.querySelectorAll('[data-context-action][data-file-id]')) {
+				menuButton.addEventListener('click', function(event) {
+					event.preventDefault();
+					event.stopPropagation();
+					closeOpenContextMenu();
+					onHandleRecycleAction(menuButton.dataset.contextAction, fileId);
+				});
+			}
+			positionContextMenu(menu, button, 220, 180);
+			document.body.appendChild(menu);
+			button.setAttribute('aria-expanded', 'true');
+			return;
+		}
 		const documentEntry = getDocumentById(fileId);
 		if (!documentEntry) {
 			return;
@@ -167,6 +202,34 @@ export function createContextMenuController({
 
 	function showBulkActionsMenu(button) {
 		closeOpenContextMenu();
+
+		if (appState.currentView === 'recycle') {
+			const selectedEntries = getBulkSelectedRecycleEntries();
+			if (!selectedEntries.length) {
+				return;
+			}
+			const menu = document.createElement('div');
+			menu.className = 'context-menu bulk-actions-menu';
+			menu.innerHTML = `
+				<button type="button" data-bulk-recycle-action="restore">Restore selected</button>
+				<div class="context-menu-separator"></div>
+				<button type="button" class="danger" data-bulk-recycle-action="delete-finally">Delete finally selected</button>
+			`;
+			for (const menuButton of menu.querySelectorAll('[data-bulk-recycle-action]')) {
+				menuButton.addEventListener('click', function(event) {
+					event.preventDefault();
+					event.stopPropagation();
+					closeOpenContextMenu();
+					onHandleRecycleBulkAction(menuButton.dataset.bulkRecycleAction);
+				});
+			}
+			positionContextMenu(menu, button, 220, 120);
+			document.body.appendChild(menu);
+			button.setAttribute('aria-expanded', 'true');
+			appState.bulkActionsMenuOpen = true;
+			return;
+		}
+
 		const selectedDocuments = getBulkSelectedDocuments();
 		if (!selectedDocuments.length) {
 			return;

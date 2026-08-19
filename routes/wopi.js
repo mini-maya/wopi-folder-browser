@@ -180,7 +180,12 @@ router.post('/files/:fileId', async function(req, res, next) {
 			const currentExtension = authorized.document.extension;
 			const normalizedRequestedName = `${requestedName}${currentExtension}`;
 			const updatedDocument = await renameOrMoveDocument(authorized.documentRoot, req.params.fileId, {
-				targetName: normalizedRequestedName
+				targetName: normalizedRequestedName,
+				actor: {
+					id: authorized.tokenPayload.userId || 'shared-user',
+					name: authorized.tokenPayload.userName || 'Shared Folder User'
+				},
+				context: authorized.tokenPayload.storageContext || null
 			});
 			res.json({
 				Name: updatedDocument.name,

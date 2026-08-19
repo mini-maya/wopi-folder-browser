@@ -1,0 +1,106 @@
+body.editor-fullscreen,
+body.share-session {
+  background: var(--panel-bg);
+  overflow: hidden;
+}
+
+body.editor-fullscreen .layout,
+body.share-session .layout {
+  display: block;
+  min-height: 100vh;
+  padding: 0;
+}
+
+body.editor-fullscreen .sidebar,
+body.share-session .sidebar {
+  display: none;
+}
+
+body.editor-fullscreen .viewer,
+body.share-session .viewer {
+  min-height: 100vh;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body.editor-fullscreen .details-panel,
+body.share-session .details-panel {
+  display: none;
+}
+
+body.editor-fullscreen .viewer-header,
+body.share-session .viewer-header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-default);
+}
+
+body.editor-fullscreen .viewer-header {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 3;
+  width: auto;
+  padding: 0;
+  border: 0;
+}
+
+body.editor-fullscreen .viewer-header > div {
+  display: none;
+}
+
+body.editor-fullscreen #close-viewer-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  background: var(--primary);
+  color: #fff;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  box-shadow: var(--panel-shadow);
+}
+
+body.editor-fullscreen #close-viewer-button:hover {
+  background: var(--primary-hover);
+}
+
+body.editor-fullscreen[data-viewer-document-type="text"] #close-viewer-button {
+  background: #4274B0;
+}
+
+body.editor-fullscreen[data-viewer-document-type="text"] #close-viewer-button:hover {
+  background: #2769A0;
+}
+
+body.editor-fullscreen[data-viewer-document-type="spreadsheet"] #close-viewer-button {
+  background: #43721C;
+}
+
+body.editor-fullscreen[data-viewer-document-type="spreadsheet"] #close-viewer-button:hover {
+  background: #2D6514;
+}
+
+body.editor-fullscreen[data-viewer-document-type="presentation"] #close-viewer-button {
+  background: #9C4614;
+}
+
+body.editor-fullscreen[data-viewer-document-type="presentation"] #close-viewer-button:hover {
+  background: #994515;
+}
+
+body.share-session #close-viewer-button {
+  display: none;
+}
+
+body.editor-fullscreen .viewer-frame-wrapper,
+body.share-session .viewer-frame-wrapper {
+  padding: 0;
+}
+
+body.editor-fullscreen #collabora-online-viewer,
+body.share-session #collabora-online-viewer {
+  min-height: calc(100vh);
+  border: 0;
+  border-radius: 0;
+}

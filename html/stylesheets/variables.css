@@ -1,0 +1,108 @@
+:root {
+  --bg-page: #f3f6fa;
+  --text-main: #122033;
+  --primary: #0f62fe;
+  --primary-hover: #0b4fd1;
+  --secondary-bg: #dfe8f7;
+  --secondary-text: #122033;
+  --danger: #b42318;
+  --danger-hover: #8f1a12;
+  --panel-bg: #fff;
+  --panel-shadow: 0 10px 35px rgba(18, 32, 51, 0.08);
+  --muted-text: #58708f;
+  --subtle-text: #40556f;
+  --surface-subtle: #f8fafc;
+  --border-default: #dbe3ef;
+  --border-soft: #edf2f7;
+  --row-hover: #fafcff;
+  --status-bg: #eef4ff;
+  --status-text: #214c9a;
+  --status-error-bg: #fff0f0;
+  --status-error-text: #b42318;
+}
+
+body[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-page: #0f1726;
+  --text-main: #e7edf8;
+  --primary: #3a82ff;
+  --primary-hover: #2d6dd8;
+  --secondary-bg: #22344f;
+  --secondary-text: #e7edf8;
+  --danger: #d74b3f;
+  --danger-hover: #b63f35;
+  --panel-bg: #152237;
+  --panel-shadow: 0 10px 35px rgba(0, 0, 0, 0.35);
+  --muted-text: #a2b2ca;
+  --subtle-text: #c3d0e2;
+  --surface-subtle: #1a2b45;
+  --border-default: #2d3f5f;
+  --border-soft: #2a3b57;
+  --row-hover: #1c2d47;
+  --status-bg: #1a365f;
+  --status-text: #c9defd;
+  --status-error-bg: #5e1f25;
+  --status-error-text: #ffd6d8;
+}
+
+body {
+  margin: 0;
+  font: 14px "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg-page);
+  color: var(--text-main);
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 0.65rem 0.95rem;
+  background: var(--primary);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--primary-hover);
+}
+
+button.secondary {
+  background: var(--secondary-bg);
+  color: var(--secondary-text);
+}
+
+button.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0;
+  border-radius: 10px;
+}
+
+button.icon-button svg {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+}
+
+button.danger {
+  background: var(--danger);
+}
+
+button.danger:hover {
+  background: var(--danger-hover);
+}
+
+.close-icon {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+}
+
+.hidden {
+  display: none !important;
+}

@@ -3,6 +3,8 @@ const ACTIVITY_LABELS = {
 	view: 'Viewed',
 	edit: 'Edited',
 	create: 'Created',
+	recycle: 'Moved to recycle bin',
+	restore: 'Restored',
 	share: 'Shared',
 	move: 'Moved',
 	copy: 'Copied',
@@ -17,4 +19,3 @@ const ACTIVITY_LABELS = {
 export function getActivityLabel(type) {
 	return ACTIVITY_LABELS[type] || type;
 }
-

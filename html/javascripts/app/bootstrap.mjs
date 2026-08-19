@@ -134,6 +134,9 @@ export function createAppBootstrap({
 		elements.adminCancel.addEventListener('click', function() {
 			authController.closeModal(elements.adminModal);
 		});
+		elements.adminConsistencyCancel.addEventListener('click', function() {
+			authController.closeModal(elements.adminConsistencyModal);
+		});
 		elements.adminCreateGeneratePassword.addEventListener('change', function(event) {
 			elements.adminCreatePassword.disabled = event.target.checked;
 			if (event.target.checked) {
@@ -142,6 +145,11 @@ export function createAppBootstrap({
 		});
 		elements.adminCreateUserForm.addEventListener('submit', function(event) {
 			authController.submitAdminCreateUserForm(event).catch(function(error) {
+				setStatus(error.message, true);
+			});
+		});
+		elements.adminConsistencyCheckButton.addEventListener('click', function() {
+			authController.runConsistencyCheck().catch(function(error) {
 				setStatus(error.message, true);
 			});
 		});

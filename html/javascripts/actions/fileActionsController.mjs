@@ -20,13 +20,18 @@ export function createFileActionsController({
 			const description = isDirectoryConflict
 				? 'A folder with this name already exists at the target location. Choose how to continue.'
 				: 'A file with this name already exists at the target location. Choose how to continue.';
+			const isRestoreConflict = String(operationLabel || '').toLowerCase().includes('restore');
 			const actionButtons = isDirectoryConflict
 				? '<button type="button" data-conflict-action="replace">Replace folder</button>' +
 					'<button type="button" data-conflict-action="integrate" class="secondary">Integrate folder</button>' +
 					'<button type="button" data-conflict-action="skip" class="secondary">Skip</button>'
-				: '<button type="button" data-conflict-action="overwrite">Overwrite</button>' +
-					'<button type="button" data-conflict-action="keep_both" class="secondary">Keep both</button>' +
-					'<button type="button" data-conflict-action="skip" class="secondary">Skip</button>';
+				: isRestoreConflict
+					? '<button type="button" data-conflict-action="overwrite">Overwrite</button>' +
+						'<button type="button" data-conflict-action="keep_both" class="secondary">Keep both</button>' +
+						'<button type="button" data-conflict-action="skip" class="secondary">Skip</button>'
+					: '<button type="button" data-conflict-action="overwrite">Overwrite</button>' +
+						'<button type="button" data-conflict-action="keep_both" class="secondary">Keep both</button>' +
+						'<button type="button" data-conflict-action="skip" class="secondary">Skip</button>';
 			const sourceParentPath = (conflict?.source?.relativePath || '').includes('/')
 				? (conflict.source.relativePath || '').slice(0, (conflict.source.relativePath || '').lastIndexOf('/'))
 				: '';
@@ -364,7 +369,7 @@ export function createFileActionsController({
 	}
 
 	async function deleteSelectedDocuments(documents) {
-		const confirmed = window.confirm(`Delete ${documents.length} selected item${documents.length === 1 ? '' : 's'}?`);
+		const confirmed = window.confirm(`Recycle ${documents.length} selected item${documents.length === 1 ? '' : 's'} to bin?`);
 		if (!confirmed) {
 			return;
 		}
@@ -391,7 +396,7 @@ export function createFileActionsController({
 	}
 
 	async function deleteDocument(fileId) {
-		if (!window.confirm('Delete this document?')) {
+		if (!window.confirm('Recycle this document to bin?')) {
 			return;
 		}
 
@@ -490,6 +495,7 @@ export function createFileActionsController({
 		saveAsDocument,
 		createShare,
 		handleBulkAction,
-		handleFileAction
+		handleFileAction,
+		showConflictDialog
 	};
 }

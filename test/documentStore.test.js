@@ -18,7 +18,16 @@ const {
 	renameOrMoveDocument,
 	uploadDocuments
 } = require('../lib/documentStore');
+const { getDocumentActivityType } = require('../routes/apiDocuments');
+const { getCachedThumbnail, resolveThumbnailAbsolutePath, storeThumbnail } = require('../lib/previewStore');
+const { listRecycledEntries } = require('../lib/recycleStore');
 const { getCommonStateRoot, getContextStateRoot, getStateRoot } = require('../lib/statePaths');
+const { getVersionEntry } = require('../lib/versionStore');
+
+const ONE_PIXEL_PNG = Buffer.from(
+	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Y8h8AAAAASUVORK5CYII=',
+	'base64'
+);
 
 test('listDocuments returns folders and supported files recursively', async function() {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
@@ -57,6 +66,12 @@ test('getDocumentById rejects traversal-like file ids', async function() {
 	}, /(invalid document path|unknown)/);
 });
 
+test('getDocumentActivityType treats same-folder renames as rename actions', function() {
+	assert.equal(getDocumentActivityType({ relativePath: 'report.odt' }, { relativePath: 'renamed-report.odt' }), 'rename');
+	assert.equal(getDocumentActivityType({ relativePath: 'folder/report.odt' }, { relativePath: 'folder/renamed-report.odt' }), 'rename');
+	assert.equal(getDocumentActivityType({ relativePath: 'folder/report.odt' }, { relativePath: 'archive/report.odt' }), 'move');
+});
+
 test('renameOrMoveDocument keeps the same stable file id', async function() {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
 	await fs.writeFile(path.join(tempRoot, 'report.odt'), 'report');
@@ -85,22 +100,40 @@ test('copyDocument creates a new independent file id', async function() {
 
 test('copyDocument throws a structured conflict before resolution and then keeps both', async function() {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
-	await fs.writeFile(path.join(tempRoot, 'report.odt'), 'original');
-	await fs.writeFile(path.join(tempRoot, 'report (1).odt'), 'existing');
+	await fs.writeFile(path.join(tempRoot, 'source.odt'), 'original');
+	await fs.writeFile(path.join(tempRoot, 'target.odt'), 'existing');
+	await fs.writeFile(path.join(tempRoot, 'target (1).odt'), 'existing-copy');
 
-	const sourceDocument = (await listDocuments(tempRoot)).find((document) => document.relativePath === 'report.odt');
+	const sourceDocument = (await listDocuments(tempRoot)).find((document) => document.relativePath === 'source.odt');
 	await assert.rejects(function() {
 		return copyDocument(tempRoot, sourceDocument.id, {
-			targetName: 'report.odt'
+			targetName: 'target.odt'
 		});
 	}, (error) => error && error.code === 'FILE_CONFLICT');
 
 	const resolvedCopy = await copyDocument(tempRoot, sourceDocument.id, {
-		targetName: 'report.odt',
+		targetName: 'target.odt',
 		conflictResolution: 'keep_both'
 	});
-	assert.equal(resolvedCopy.relativePath, 'report (2).odt');
-	assert.equal(await fs.readFile(path.join(tempRoot, 'report (2).odt'), 'utf8'), 'original');
+	assert.equal(resolvedCopy.relativePath, 'target (2).odt');
+	assert.equal(await fs.readFile(path.join(tempRoot, 'target (2).odt'), 'utf8'), 'original');
+});
+
+test('copyDocument rejects copying a file onto itself', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await fs.writeFile(path.join(tempRoot, 'report.odt'), 'report');
+
+	const sourceDocument = (await listDocuments(tempRoot)).find((document) => document.relativePath === 'report.odt');
+	await assert.rejects(function() {
+		return copyDocument(tempRoot, sourceDocument.id, {
+			targetName: 'report.odt',
+			conflictResolution: 'overwrite'
+		});
+	}, /copied onto itself/);
+
+	const documents = await listDocuments(tempRoot);
+	assert.deepEqual(documents.map((document) => document.relativePath), ['report.odt']);
+	assert.equal(await fs.readFile(path.join(tempRoot, 'report.odt'), 'utf8'), 'report');
 });
 
 test('renameOrMoveDocument resolves conflicts with overwrite and keep-both semantics', async function() {
@@ -199,6 +232,32 @@ test('copyDocument copies folders recursively with new ids', async function() {
 	assert.notEqual(nestedCopy.id, nestedBefore.id);
 });
 
+test('copyDocument replace recycles the replaced folder contents', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await fs.mkdir(path.join(tempRoot, 'existing-folder', 'keep'), { recursive: true });
+	await fs.writeFile(path.join(tempRoot, 'existing-folder', 'keep', 'old.odt'), 'old');
+	await fs.mkdir(path.join(tempRoot, 'replacement-folder', 'nested'), { recursive: true });
+	await fs.writeFile(path.join(tempRoot, 'replacement-folder', 'nested', 'new.odt'), 'new');
+
+	const documents = await listDocuments(tempRoot);
+	const sourceFolder = documents.find((document) => document.relativePath === 'replacement-folder');
+	const targetFolder = documents.find((document) => document.relativePath === 'existing-folder');
+
+	const replacedFolder = await copyDocument(tempRoot, sourceFolder.id, {
+		targetName: 'existing-folder',
+		conflictResolution: 'replace',
+		actor: { id: 'user-1', name: 'User One' },
+		context: 'personal'
+	});
+
+	assert.equal(replacedFolder.relativePath, 'existing-folder');
+	assert.equal(await fs.readFile(path.join(tempRoot, 'existing-folder', 'nested', 'new.odt'), 'utf8'), 'new');
+	const recycledEntries = await listRecycledEntries(tempRoot);
+	assert.ok(recycledEntries.some((entry) => entry.originalPath === 'existing-folder/keep/old.odt'));
+	assert.equal((await listDocuments(tempRoot)).find((document) => document.relativePath === 'existing-folder')?.id, replacedFolder.id);
+	assert.ok(targetFolder.id !== replacedFolder.id);
+});
+
 test('deleteDocument removes folders recursively', async function() {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
 	await fs.mkdir(path.join(tempRoot, 'archive', 'nested'), { recursive: true });
@@ -213,6 +272,114 @@ test('deleteDocument removes folders recursively', async function() {
 
 	const afterDelete = await listDocuments(tempRoot);
 	assert.deepEqual(afterDelete, []);
+});
+
+test('deleteDocument snapshots deleted files into recycle state and clears previews', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await fs.writeFile(path.join(tempRoot, 'report.odt'), 'report');
+
+	const [document] = await listDocuments(tempRoot);
+	await storeThumbnail(tempRoot, {
+		fileId: document.id,
+		version: document.version,
+		relativePath: document.relativePath,
+		buffer: ONE_PIXEL_PNG,
+		mimeType: 'image/png',
+		width: 1,
+		height: 1
+	});
+
+	const deletedDocument = await deleteDocument(tempRoot, document.id, {
+		actor: { id: 'user-1', name: 'User One' },
+		context: 'personal'
+	});
+
+	assert.equal(deletedDocument.id, document.id);
+	await assert.rejects(() => getDocumentById(tempRoot, document.id));
+	const cachedPreview = await getCachedThumbnail(tempRoot, document.id, document.version);
+	assert.ok(cachedPreview);
+	assert.equal(cachedPreview.version, document.version);
+	assert.equal(await resolveThumbnailAbsolutePath(tempRoot, document.id, document.version), cachedPreview.absolutePath);
+	await fs.access(cachedPreview.absolutePath);
+
+	const recycledEntries = await listRecycledEntries(tempRoot);
+	assert.equal(recycledEntries.length, 1);
+	assert.equal(recycledEntries[0].fileId, document.id);
+	assert.equal(recycledEntries[0].originalPath, 'report.odt');
+	assert.equal(recycledEntries[0].versionId, recycledEntries[0].snapshotId);
+	assert.equal(recycledEntries[0].versionSize, document.size);
+
+	const versionEntry = await getVersionEntry(tempRoot, document.id, recycledEntries[0].versionId);
+	assert.equal(recycledEntries[0].versionSize, versionEntry.entry.size);
+	assert.equal(path.basename(versionEntry.storagePath).endsWith('.odt'), true);
+	await fs.access(versionEntry.storagePath);
+});
+
+test('copyDocument overwrite recycles the existing target and preserves its preview', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await fs.writeFile(path.join(tempRoot, 'source.odt'), 'source');
+	await fs.writeFile(path.join(tempRoot, 'target.odt'), 'target');
+
+	const documents = await listDocuments(tempRoot);
+	const sourceDocument = documents.find((document) => document.relativePath === 'source.odt');
+	const targetDocument = documents.find((document) => document.relativePath === 'target.odt');
+
+	await storeThumbnail(tempRoot, {
+		fileId: targetDocument.id,
+		version: targetDocument.version,
+		relativePath: targetDocument.relativePath,
+		buffer: ONE_PIXEL_PNG,
+		mimeType: 'image/png',
+		width: 1,
+		height: 1
+	});
+
+	const copiedDocument = await copyDocument(tempRoot, sourceDocument.id, {
+		targetName: 'target.odt',
+		conflictResolution: 'overwrite'
+	});
+
+	assert.equal(copiedDocument.relativePath, 'target.odt');
+	assert.equal(copiedDocument.id, targetDocument.id);
+	assert.equal(await fs.readFile(path.join(tempRoot, 'target.odt'), 'utf8'), 'source');
+	assert.ok(await getCachedThumbnail(tempRoot, targetDocument.id, targetDocument.version));
+});
+
+test('renameOrMoveDocument overwrite recycles the existing target and keeps the moved document id', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await fs.writeFile(path.join(tempRoot, 'source.odt'), 'source');
+	await fs.writeFile(path.join(tempRoot, 'target.odt'), 'target');
+
+	const documents = await listDocuments(tempRoot);
+	const sourceDocument = documents.find((document) => document.relativePath === 'source.odt');
+	const targetDocument = documents.find((document) => document.relativePath === 'target.odt');
+
+	await storeThumbnail(tempRoot, {
+		fileId: targetDocument.id,
+		version: targetDocument.version,
+		relativePath: targetDocument.relativePath,
+		buffer: ONE_PIXEL_PNG,
+		mimeType: 'image/png',
+		width: 1,
+		height: 1
+	});
+
+	const movedDocument = await renameOrMoveDocument(tempRoot, sourceDocument.id, {
+		targetName: 'target.odt',
+		conflictResolution: 'overwrite',
+		actor: { id: 'user-1', name: 'User One' },
+		context: 'personal'
+	});
+
+	assert.equal(movedDocument.id, sourceDocument.id);
+	assert.equal(movedDocument.relativePath, 'target.odt');
+	assert.equal(await fs.readFile(path.join(tempRoot, 'target.odt'), 'utf8'), 'source');
+
+	const recycledEntries = await listRecycledEntries(tempRoot);
+	assert.equal(recycledEntries.length, 1);
+	assert.equal(recycledEntries[0].fileId, targetDocument.id);
+	assert.equal(recycledEntries[0].originalPath, 'target.odt');
+	assert.ok(await getCachedThumbnail(tempRoot, targetDocument.id, targetDocument.version));
 });
 
 test('uploadDocuments stores supported files and preserves dropped folder structure', async function() {
