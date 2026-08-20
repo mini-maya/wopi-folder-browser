@@ -368,6 +368,16 @@ a {
   justify-content: flex-end;
 }
 
+.modal-error {
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--status-error-text);
+  border-radius: 10px;
+  background: var(--status-error-bg);
+  color: var(--status-error-text);
+  font-size: 0.85rem;
+}
+
 .about-modal-card {
   width: min(44rem, 100%);
 }
@@ -396,6 +406,14 @@ a {
 
 .admin-modal-card {
   width: min(56rem, 100%);
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-modal-card .modal-body {
+  overflow: auto;
+  min-height: 0;
 }
 
 .admin-section {

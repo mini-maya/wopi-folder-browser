@@ -37,6 +37,7 @@ const elements = {
 	bulkActionsMenuButton: document.querySelector('#bulk-menu-button'),
 	viewerFrame: document.querySelector('#collabora-online-viewer'),
 	refreshButton: document.querySelector('#refresh-button'),
+	storageSelect: document.querySelector('#storage-select'),
 	recycleButton: document.querySelector('#recycle-button'),
 	newMenuButton: document.querySelector('#new-menu-button'),
 	uploadButton: document.querySelector('#upload-button'),
@@ -75,6 +76,11 @@ const elements = {
 	loginForm: document.querySelector('#login-form'),
 	loginUsername: document.querySelector('#login-username'),
 	loginPassword: document.querySelector('#login-password'),
+	sharePasswordModal: document.querySelector('#share-password-modal'),
+	sharePasswordCancel: document.querySelector('#share-password-cancel'),
+	sharePasswordForm: document.querySelector('#share-password-form'),
+	sharePasswordInput: document.querySelector('#share-password-input'),
+	sharePasswordError: document.querySelector('#share-password-error'),
 	accountModal: document.querySelector('#account-modal'),
 	accountCancel: document.querySelector('#account-cancel'),
 	accountForm: document.querySelector('#account-form'),
@@ -107,6 +113,8 @@ const appState = {
 	documents: [],
 	visibleDocuments: [],
 	config: null,
+	storages: [],
+	currentStorageId: 'documents',
 	themeMode: 'auto',
 	currentView: 'files',
 	selectedFileIds: new Set(),
@@ -131,7 +139,7 @@ const appState = {
 	auth: {
 		authenticated: false,
 		user: null,
-		storageContext: 'shared'
+		storageId: 'documents'
 	},
 	adminUsers: [],
 	recycleEntries: [],
@@ -166,6 +174,57 @@ function isFolderEntry(document) {
 function setStatus(message, isError = false) {
 	elements.statusMessage.textContent = message;
 	elements.statusMessage.classList.toggle('error', isError);
+}
+
+function getStorageIdFromLocation() {
+	const match = window.location.pathname.match(/^\/storage\/([^/]+)/);
+	return match?.[1] ? decodeURIComponent(match[1]) : 'documents';
+}
+
+function updateStoragePath(storageId) {
+	const encodedStorageId = encodeURIComponent(storageId || 'documents');
+	const nextPath = `/storage/${encodedStorageId}`;
+	if (window.location.pathname !== nextPath) {
+		window.history.replaceState({}, '', nextPath);
+	}
+}
+
+function renderStorageSelector() {
+	if (!elements.storageSelect) {
+		return;
+	}
+	const storages = Array.isArray(appState.storages) ? appState.storages : [];
+	elements.storageSelect.innerHTML = '';
+	for (const storage of storages) {
+		const option = document.createElement('option');
+		option.value = storage.id;
+		option.textContent = storage.available === false
+			? `${storage.name} (Unavailable)`
+			: `${storage.name}${storage.readOnly ? ' (Read-only)' : ''}`;
+		option.disabled = storage.available === false || storage.enabled === false;
+		elements.storageSelect.appendChild(option);
+	}
+	if (!storages.some((storage) => storage.id === appState.currentStorageId && storage.available !== false && storage.enabled !== false)) {
+		const fallback = storages.find((storage) => storage.available !== false && storage.enabled !== false);
+		if (fallback) {
+			appState.currentStorageId = fallback.id;
+		}
+	}
+	elements.storageSelect.value = appState.currentStorageId;
+	updateWriteActionButtons();
+}
+
+function updateWriteActionButtons() {
+	const currentStorage = appState.storages?.find((s) => s.id === appState.currentStorageId);
+	const isReadOnly = currentStorage?.readOnly === true;
+	const isUnauthenticated = !appState.auth?.authenticated;
+
+	if (elements.newMenuButton) {
+		elements.newMenuButton.disabled = isReadOnly || isUnauthenticated;
+	}
+	if (elements.uploadButton) {
+		elements.uploadButton.disabled = isReadOnly || isUnauthenticated;
+	}
 }
 
 function syncRecycleButtonState() {
@@ -452,6 +511,12 @@ const authController = createAuthController({
 	resetFilesViewState: function() {
 		resetFilesViewState(appState);
 	},
+	clearDocuments: function() {
+		appState.documents = [];
+		appState.storages = [];
+		appState.auth = null;
+		documentListController.renderCurrentDocumentList();
+	},
 	loadPage: async function() {
 		await loadPage();
 	},
@@ -735,21 +800,43 @@ async function handleRefreshClick() {
 async function loadPage() {
 	setStatus('Loading documents...');
 	try {
-		const [authState, config, filesResponse] = await Promise.all([
+		const [authState, config, storages] = await Promise.all([
 			requestJson('/api/auth/me'),
 			requestJson('/api/config'),
-			requestJson('/api/files')
+			requestJson('/api/storages')
 		]);
 
-		const storageContext = authState.storageContext || config.storageContext || 'shared';
+		const selectedStorageId = getStorageIdFromLocation();
+		appState.storages = Array.isArray(storages) ? storages : [];
+		appState.currentStorageId = selectedStorageId || config.storageId || 'documents';
 		appState.auth = authState;
 		appState.config = config;
-		appState.auth.storageContext = storageContext;
+
+		const hasAccessibleStorage = appState.storages.some((s) => s.available !== false && s.enabled !== false);
+		if (!hasAccessibleStorage && !authState.authenticated) {
+			authController.renderAuthControls();
+			authController.openLoginModal();
+			setStatus('');
+			return;
+		}
+
+		renderStorageSelector();
+		updateStoragePath(appState.currentStorageId);
+
 		if (!authState.authenticated) {
 			appState.currentView = 'files';
 		}
 		if (appState.currentView === 'recycle' && !authState.authenticated) {
 			appState.currentView = 'files';
+		}
+		let filesResponse = { documents: [] };
+		try {
+			filesResponse = await requestJson('/api/files');
+		} catch (error) {
+			if (error.status !== 503) {
+				throw error;
+			}
+			filesResponse = { documents: [] };
 		}
 		const recycleResponse = authState.authenticated
 			? await requestJson('/api/recycle')
@@ -762,13 +849,17 @@ async function loadPage() {
 		authController.applyPasswordPolicyToForms(config.passwordMinLength);
 		authController.renderAuthControls();
 		elements.aboutVersion.textContent = config.appVersion || 'Unknown';
-		elements.documentRoot.textContent = config.documentRoot;
+		elements.documentRoot.textContent = `${config.storageName || appState.currentStorageId}${config.storageReadOnly ? ' (read-only)' : ''}`;
 		elements.appBaseUrl.textContent = config.appBaseUrl;
 		elements.collaboraUrl.textContent = config.collaboraPublicUrl;
 		documentListController.renderCurrentDocumentList();
 		syncRecycleButtonState();
 		const count = appState.currentView === 'recycle' ? appState.recycleEntries.length : appState.documents.length;
-		setStatus(`Loaded ${count} entr${count === 1 ? 'y' : 'ies'}.`);
+		if (config.storageAvailable === false) {
+			setStatus(`${config.storageName || appState.currentStorageId} is currently unavailable.`, true);
+		} else {
+			setStatus(`Loaded ${count} entr${count === 1 ? 'y' : 'ies'}.`);
+		}
 	} catch (error) {
 		documentListController.renderEmptyState();
 		setStatus(error.message, true);
@@ -852,6 +943,15 @@ const appBootstrap = createAppBootstrap({
 	setStatus: setStatus
 });
 elements.recycleButton?.addEventListener('click', toggleRecycleView);
+elements.storageSelect?.addEventListener('change', function(event) {
+	const nextStorageId = String(event.target.value || '').trim();
+	if (!nextStorageId) {
+		return;
+	}
+	appState.currentStorageId = nextStorageId;
+	updateStoragePath(nextStorageId);
+	loadPage();
+});
 elements.aboutButton.addEventListener('click', openAboutDialog);
 elements.aboutCancel.addEventListener('click', closeAboutDialog);
 elements.aboutModal.addEventListener('click', function(event) {

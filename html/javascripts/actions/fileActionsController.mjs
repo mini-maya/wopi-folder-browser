@@ -432,14 +432,19 @@ export function createFileActionsController({
 			setStatus('This entry is currently missing on disk. Only details are available.', true);
 			return;
 		}
-		const permission = window.confirm('Create edit share link? Click Cancel for read-only link.') ? 'edit' : 'view';
-		const payload = await requestJson('/api/shares', {
+		const permission = window.confirm('Create edit share link? Click Cancel for read-only link.') ? 'read_write' : 'read';
+		const payload = await requestJson(`/api/files/${encodeURIComponent(fileId)}/public-share`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ fileId: fileId, permission: permission })
+			body: JSON.stringify({ permission: permission })
 		});
-		await navigator.clipboard.writeText(payload.url);
-		window.alert(`Share link copied to clipboard:\n${payload.url}`);
+		const shareUrl = payload.share?.url || payload.publicShare?.url || payload.url;
+		if (!shareUrl) {
+			setStatus('Public link created, but URL is missing in response.', true);
+			return;
+		}
+		await navigator.clipboard.writeText(shareUrl);
+		window.alert(`Share link copied to clipboard:\n${shareUrl}`);
 	}
 
 	async function handleBulkAction(action) {

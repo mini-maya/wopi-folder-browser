@@ -8,7 +8,6 @@ const { createInitialAdmin } = require('../lib/initialAdminSetup');
 const { loadInstallState } = require('../lib/installStore');
 const { generatePassword, hashPassword, verifyPassword } = require('../lib/passwords');
 const { destroySession, regenerateSession, requireAuth } = require('../lib/sessionAuth');
-const { assertStorageContextForUser, ensureUserStorageRoot } = require('../lib/storageContext');
 const { assertValidPassword, getUserByUsername, hasAdminUser, setUserPassword, toPublicUser } = require('../lib/userStore');
 
 const router = express.Router();
@@ -18,7 +17,7 @@ function mapAuthResponse(req) {
 		return {
 			authenticated: false,
 			user: null,
-			storageContext: 'shared'
+			storageId: req.storage?.id || 'documents'
 		};
 	}
 
@@ -31,7 +30,7 @@ function mapAuthResponse(req) {
 			active: Boolean(req.auth.user.active),
 			must_change_password: Boolean(req.auth.user.must_change_password)
 		},
-		storageContext: req.storageContext?.context || 'personal'
+		storageId: req.storage?.id || 'documents'
 	};
 }
 
@@ -83,15 +82,12 @@ router.post('/login', async function(req, res, next) {
 
 		await regenerateSession(req);
 		req.session.userId = user.id;
-		req.session.storageContext = 'personal';
 		req.auth = { authenticated: true, user: user };
-
-		await ensureUserStorageRoot(config, user.id);
 
 		res.json({
 			authenticated: true,
 			user: toPublicUser(user),
-			storageContext: 'personal'
+			storageId: req.storage?.id || 'documents'
 		});
 	} catch (error) {
 		next(error);
@@ -114,13 +110,29 @@ router.get('/me', function(req, res) {
 
 router.post('/storage-context', requireAuth, async function(req, res, next) {
 	try {
-		const context = assertStorageContextForUser(req.body.context, true);
-		req.session.storageContext = context;
-		if (context === 'personal') {
-			await ensureUserStorageRoot(config, req.auth.user.id);
-		}
+		const storageManager = req.app.locals.storageManager;
+		const requestedStorageId = String(req.body.storageId || req.body.context || '').trim();
+		const { storage } = storageManager.resolveOrHttpError(requestedStorageId || 'documents');
+		req.session.selectedStorageId = storage.id;
 		res.json({
-			context: context
+			storageId: storage.id
+		});
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.post('/storage', requireAuth, async function(req, res, next) {
+	try {
+		const storageManager = req.app.locals.storageManager;
+		const requestedStorageId = String(req.body.storageId || '').trim();
+		if (!requestedStorageId) {
+			throw createHttpError(400, 'storageId is required.');
+		}
+		const { storage } = storageManager.resolveOrHttpError(requestedStorageId);
+		req.session.selectedStorageId = storage.id;
+		res.json({
+			storageId: storage.id
 		});
 	} catch (error) {
 		next(error);

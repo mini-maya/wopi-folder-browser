@@ -23,7 +23,7 @@ const { getDocumentActivityType } = require('../routes/apiDocuments');
 const { getCachedThumbnail, resolveThumbnailAbsolutePath, storeThumbnail } = require('../lib/previewStore');
 const { listRecycledEntries } = require('../lib/recycleStore');
 const { getCommonStateRoot, getContextStateRoot, getStateRoot } = require('../lib/statePaths');
-const { getVersionEntry } = require('../lib/versionStore');
+const { createVersionSnapshot, getVersionEntry } = require('../lib/versionStore');
 
 const ONE_PIXEL_PNG = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Y8h8AAAAASUVORK5CYII=',
@@ -426,6 +426,72 @@ test('renameOrMoveDocument overwrite recycles the existing target and keeps the 
 	assert.ok(await getCachedThumbnail(tempRoot, targetDocument.id, targetDocument.version));
 });
 
+test('renameOrMoveDocument integrate keep_both preserves nested moved file ids and versions', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await fs.mkdir(path.join(tempRoot, 'Dokumente'), { recursive: true });
+	await fs.mkdir(path.join(tempRoot, 'Dokumente4'), { recursive: true });
+	await fs.writeFile(path.join(tempRoot, 'Dokumente', 'dokumente.odt'), 'target');
+	await fs.writeFile(path.join(tempRoot, 'Dokumente4', 'dokumente.odt'), 'source');
+
+	const beforeMove = await listDocuments(tempRoot);
+	const sourceFolder = beforeMove.find((document) => document.relativePath === 'Dokumente4');
+	const sourceFile = beforeMove.find((document) => document.relativePath === 'Dokumente4/dokumente.odt');
+	assert.ok(sourceFolder);
+	assert.ok(sourceFile);
+
+	const snapshot = await createVersionSnapshot(tempRoot, sourceFile, {
+		id: 'user-1',
+		name: 'User One'
+	});
+
+	await renameOrMoveDocument(tempRoot, sourceFolder.id, {
+		targetName: 'Dokumente',
+		conflictResolution: 'integrate',
+		fileConflictResolution: 'keep_both',
+		operation: 'move'
+	});
+
+	const afterMove = await listDocuments(tempRoot);
+	const keptBothFile = afterMove.find((document) => document.relativePath === 'Dokumente/dokumente (1).odt');
+	assert.ok(keptBothFile);
+	assert.equal(keptBothFile.id, sourceFile.id);
+	await assert.doesNotReject(() => getVersionEntry(tempRoot, keptBothFile.id, snapshot.id));
+});
+
+test('renameOrMoveDocument integrate overwrite recycles overwritten nested targets and keeps moved file ids', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	await fs.mkdir(path.join(tempRoot, 'Dokumente'), { recursive: true });
+	await fs.mkdir(path.join(tempRoot, 'Dokumente4'), { recursive: true });
+	await fs.writeFile(path.join(tempRoot, 'Dokumente', 'dokumente.odt'), 'target');
+	await fs.writeFile(path.join(tempRoot, 'Dokumente4', 'dokumente.odt'), 'source');
+
+	const beforeMove = await listDocuments(tempRoot);
+	const sourceFolder = beforeMove.find((document) => document.relativePath === 'Dokumente4');
+	const sourceFile = beforeMove.find((document) => document.relativePath === 'Dokumente4/dokumente.odt');
+	const targetFile = beforeMove.find((document) => document.relativePath === 'Dokumente/dokumente.odt');
+	assert.ok(sourceFolder);
+	assert.ok(sourceFile);
+	assert.ok(targetFile);
+
+	await renameOrMoveDocument(tempRoot, sourceFolder.id, {
+		targetName: 'Dokumente',
+		conflictResolution: 'integrate',
+		fileConflictResolution: 'overwrite',
+		actor: { id: 'user-1', name: 'User One' },
+		context: 'personal',
+		operation: 'move'
+	});
+
+	const afterMove = await listDocuments(tempRoot);
+	const overwrittenFile = afterMove.find((document) => document.relativePath === 'Dokumente/dokumente.odt');
+	assert.ok(overwrittenFile);
+	assert.equal(overwrittenFile.id, sourceFile.id);
+	assert.equal(await fs.readFile(path.join(tempRoot, 'Dokumente', 'dokumente.odt'), 'utf8'), 'source');
+
+	const recycledEntries = await listRecycledEntries(tempRoot);
+	assert.ok(recycledEntries.some((entry) => entry.fileId === targetFile.id && entry.originalPath === 'Dokumente/dokumente.odt'));
+});
+
 test('uploadDocuments stores supported files and preserves dropped folder structure', async function() {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
 	await createFolder(tempRoot, { folderName: 'inbox' });
@@ -488,14 +554,15 @@ test('uploadDocuments rejects an unknown target folder', async function() {
 	}, /The target folder does not exist/);
 });
 
-test('getContextStateRoot keeps shared document state under shared when configured', function() {
+test('getContextStateRoot namespaces storage state under storages/<hash>', function() {
 	const tempRoot = path.join(os.tmpdir(), 'wopi-folder-browser-state-root-test');
 	const customStateRoot = path.join(tempRoot, 'state-root');
 	const previousValue = process.env.WOPI_STATE_ROOT;
 	process.env.WOPI_STATE_ROOT = customStateRoot;
 
 	try {
-		assert.equal(getContextStateRoot(tempRoot), path.join(customStateRoot, 'shared'));
+		const contextStateRoot = getContextStateRoot(tempRoot);
+		assert.match(contextStateRoot, new RegExp(`${customStateRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${path.sep}storages${path.sep}`));
 	} finally {
 		if (previousValue === undefined) {
 			delete process.env.WOPI_STATE_ROOT;
@@ -505,15 +572,16 @@ test('getContextStateRoot keeps shared document state under shared when configur
 	}
 });
 
-test('getContextStateRoot keeps personal document state isolated under users/<userId>', function() {
+test('getContextStateRoot returns distinct namespaces for different storage roots', function() {
 	const tempRoot = path.join(os.tmpdir(), 'wopi-folder-browser-user-state-root-test');
 	const customStateRoot = path.join(tempRoot, 'state-root');
-	const userRoot = path.join(tempRoot, 'users', 'user-42');
+	const storageOneRoot = path.join(tempRoot, 'storage-one');
+	const storageTwoRoot = path.join(tempRoot, 'storage-two');
 	const previousValue = process.env.WOPI_STATE_ROOT;
 	process.env.WOPI_STATE_ROOT = customStateRoot;
 
 	try {
-		assert.equal(getContextStateRoot(userRoot), path.join(customStateRoot, 'users', 'user-42'));
+		assert.notEqual(getContextStateRoot(storageOneRoot), getContextStateRoot(storageTwoRoot));
 	} finally {
 		if (previousValue === undefined) {
 			delete process.env.WOPI_STATE_ROOT;

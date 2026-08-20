@@ -1,7 +1,6 @@
 'use strict';
 
 const express = require('express');
-const fs = require('node:fs/promises');
 
 const config = require('../lib/config');
 const { verifyAccessToken } = require('../lib/accessToken');
@@ -10,8 +9,13 @@ const { getDocumentById, renameOrMoveDocument } = require('../lib/documentStore'
 const { createHttpError } = require('../lib/errors');
 const { clearLock, ensureLockMatches, getLock, setLock } = require('../lib/lockStore');
 const { invalidatePreview } = require('../lib/previewStore');
-const { getShare } = require('../lib/shareStore');
-const { getStorageRootFromTokenClaims } = require('../lib/storageContext');
+const { getSharedStorageRoot, getUserStorageRoot } = require('../lib/storageContext');
+const {
+  PUBLIC_SHARE_STATUS_EXHAUSTED,
+  PUBLIC_SHARE_STATUS_EXPIRED,
+  PUBLIC_SHARE_STATUS_REVOKED,
+  getPublicShareById
+} = require('../lib/shareStore');
 const { createVersionSnapshot, getVersionEntry } = require('../lib/versionStore');
 
 const router = express.Router();
@@ -29,21 +33,43 @@ async function loadAuthorizedDocument(req) {
 		}
 	});
 
+	const storageManager = req.app.locals.storageManager;
+	const storageId = payload.storageId || 'documents';
+	let { storage } = storageManager.resolveOrHttpError(storageId);
+	let documentRoot = storageId === 'documents' && payload.userId
+		? getUserStorageRoot(config, payload.userId)
+		: storage.root;
+
 	if (payload.shareId) {
-		const share = await getShare(getStorageRootFromTokenClaims(config, payload), payload.shareId);
-		if (share.fileId !== fileId) {
+		const share = await getPublicShareById(config.documentRoot, payload.shareId);
+		if (share.resourceId !== fileId) {
 			throw createHttpError(403, 'The share does not grant access to this file.');
 		}
-		if (share.permission !== 'edit' && payload.canWrite) {
+		if (share.status === PUBLIC_SHARE_STATUS_REVOKED) {
+			throw createHttpError(404, 'This share link is no longer available.');
+		}
+		if (share.status === PUBLIC_SHARE_STATUS_EXPIRED || (share.expiresAt && new Date(share.expiresAt).getTime() < Date.now())) {
+			throw createHttpError(403, 'This share link has expired.');
+		}
+		if (share.status === PUBLIC_SHARE_STATUS_EXHAUSTED) {
+			throw createHttpError(403, 'This share link has reached its access limit.');
+		}
+		if (payload.storageId && share.storageId !== payload.storageId) {
+			throw createHttpError(403, 'Storage access denied.');
+		}
+		if (share.permission !== 'read_write' && payload.canWrite) {
 			throw createHttpError(403, 'This share does not allow editing.');
 		}
+		({ storage } = storageManager.resolveOrHttpError(share.storageId));
+		documentRoot = share.storageId === 'documents' && share.ownerUserId
+			? getUserStorageRoot(config, share.ownerUserId)
+			: (share.storageId === 'shared' ? getSharedStorageRoot(config) : storage.root);
 	}
-
-	const documentRoot = getStorageRootFromTokenClaims(config, payload);
 	return {
 		document: await getDocumentById(documentRoot, fileId),
 		tokenPayload: payload,
-		documentRoot: documentRoot
+		documentRoot: documentRoot,
+		storage: storage
 	};
 }
 
@@ -58,6 +84,7 @@ function getLockFromHeader(req) {
 router.get('/files/:fileId', async function(req, res, next) {
 	try {
 		const authorized = await loadAuthorizedDocument(req);
+		const disableExport = Boolean(authorized.tokenPayload.shareId) && authorized.tokenPayload.shareDownloadEnabled === false;
 
 		if (authorized.tokenPayload.versionId) {
 			const { entry } = await getVersionEntry(authorized.documentRoot, req.params.fileId, authorized.tokenPayload.versionId);
@@ -73,6 +100,7 @@ router.get('/files/:fileId', async function(req, res, next) {
 				SupportsLocks: false,
 				SupportsUpdate: false,
 				SupportsRename: false,
+				DisableExport: disableExport,
 				Version: entry.id,
 				LastModifiedTime: entry.createdAt
 			});
@@ -85,12 +113,13 @@ router.get('/files/:fileId', async function(req, res, next) {
 			Size: authorized.document.size,
 			UserId: authorized.tokenPayload.userId || 'shared-user',
 			UserFriendlyName: authorized.tokenPayload.userName || 'Shared Folder User',
-			UserCanWrite: Boolean(authorized.tokenPayload.canWrite),
-			UserCanRename: Boolean(authorized.tokenPayload.canRename),
+			UserCanWrite: Boolean(authorized.tokenPayload.canWrite) && authorized.storage.readOnly !== true,
+			UserCanRename: Boolean(authorized.tokenPayload.canRename) && authorized.storage.readOnly !== true,
 			SupportsGetLock: true,
 			SupportsLocks: true,
 			SupportsUpdate: true,
 			SupportsRename: true,
+			DisableExport: disableExport,
 			Version: authorized.document.version,
 			LastModifiedTime: authorized.document.updatedAt
 		});
@@ -169,7 +198,7 @@ router.post('/files/:fileId', async function(req, res, next) {
 		}
 
 		if (override === 'RENAME_FILE') {
-			if (!authorized.tokenPayload.canRename) {
+			if (!authorized.tokenPayload.canRename || authorized.storage.readOnly === true) {
 				throw createHttpError(403, 'You no longer have permission to edit this document.');
 			}
 			const requestedName = req.get('X-WOPI-RequestedName');
@@ -185,7 +214,7 @@ router.post('/files/:fileId', async function(req, res, next) {
 					id: authorized.tokenPayload.userId || 'shared-user',
 					name: authorized.tokenPayload.userName || 'Shared Folder User'
 				},
-				context: authorized.tokenPayload.storageContext || null
+				context: authorized.tokenPayload.storageId || authorized.storage.id || null
 			});
 			res.json({
 				Name: updatedDocument.name,
@@ -203,7 +232,7 @@ router.post('/files/:fileId', async function(req, res, next) {
 router.post('/files/:fileId/contents', async function(req, res, next) {
 	try {
 		const authorized = await loadAuthorizedDocument(req);
-		if (!authorized.tokenPayload.canWrite) {
+		if (!authorized.tokenPayload.canWrite || authorized.storage.readOnly === true) {
 			throw createHttpError(403, 'You no longer have permission to edit this document.');
 		}
 
@@ -217,7 +246,9 @@ router.post('/files/:fileId/contents', async function(req, res, next) {
 			return;
 		}
 
-		await fs.writeFile(authorized.document.absolutePath, req.body);
+		const storageManager = req.app.locals.storageManager;
+		const provider = storageManager.getProviderForRoot(authorized.documentRoot, authorized.storage.readOnly);
+		await provider.write(authorized.document.relativePath, req.body);
 		const updatedDocument = await getDocumentById(authorized.documentRoot, req.params.fileId);
 		await createVersionSnapshot(authorized.documentRoot, updatedDocument, {
 			id: authorized.tokenPayload.userId || 'shared-user',

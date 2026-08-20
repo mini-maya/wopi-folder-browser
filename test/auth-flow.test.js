@@ -7,6 +7,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { getContextStateRoot } = require('../lib/statePaths');
 
 function clearRepositoryModules() {
 	for (const cacheKey of Object.keys(require.cache)) {
@@ -175,14 +176,7 @@ test('setup, authentication, authorization and storage isolation flow', async fu
 		assert.equal(requestResult.response.status, 403);
 
 		requestResult = await anonymousClient.request('/api/files');
-		assert.equal(requestResult.response.status, 200);
-
-		requestResult = await userAClient.request('/api/auth/storage-context', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ context: 'shared' })
-		});
-		assert.equal(requestResult.response.status, 200);
+		assert.equal(requestResult.response.status, 401);
 
 		requestResult = await userAClient.request('/api/files');
 		assert.equal(requestResult.response.status, 200);
@@ -256,17 +250,13 @@ test('prune-missing endpoint cleans only missing entries in current context', as
 			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
 		});
 		assert.equal(requestResult.response.status, 200);
-		requestResult = await client.request('/api/auth/storage-context', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ context: 'shared' })
-		});
-		assert.equal(requestResult.response.status, 200);
-
-		await fs.writeFile(path.join(instance.tempRoot, 'storage', 'shared', 'present.odt'), 'present');
-		const sharedStateRoot = path.join(instance.tempRoot, 'state', 'shared');
-		await fs.mkdir(sharedStateRoot, { recursive: true });
-		await fs.writeFile(path.join(sharedStateRoot, 'file-registry.json'), JSON.stringify({
+		const adminUserId = requestResult.payload.user.id;
+		const userDocumentsRoot = path.join(instance.tempRoot, 'storage', 'users', adminUserId);
+		await fs.mkdir(userDocumentsRoot, { recursive: true });
+		await fs.writeFile(path.join(userDocumentsRoot, 'present.odt'), 'present');
+		const contextStateRoot = getContextStateRoot(userDocumentsRoot);
+		await fs.mkdir(contextStateRoot, { recursive: true });
+		await fs.writeFile(path.join(contextStateRoot, 'file-registry.json'), JSON.stringify({
 			entries: {
 				'present-id': 'present.odt',
 				'missing-id': 'missing-folder/missing.odt'
@@ -284,7 +274,7 @@ test('prune-missing endpoint cleans only missing entries in current context', as
 		assert.equal(requestResult.payload.missingEntryCount, 1);
 		assert.deepEqual(requestResult.payload.removedFileIds, ['missing-id']);
 
-		const registry = JSON.parse(await fs.readFile(path.join(sharedStateRoot, 'file-registry.json'), 'utf8'));
+		const registry = JSON.parse(await fs.readFile(path.join(contextStateRoot, 'file-registry.json'), 'utf8'));
 		assert.deepEqual(registry.entries, { 'present-id': 'present.odt' });
 	} finally {
 		await new Promise((resolve, reject) => instance.server.close((error) => (error ? reject(error) : resolve())));
@@ -311,15 +301,10 @@ test('launch activities distinguish open from view', async function() {
 			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
 		});
 		assert.equal(requestResult.response.status, 200);
-
-		requestResult = await client.request('/api/auth/storage-context', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ context: 'shared' })
-		});
-		assert.equal(requestResult.response.status, 200);
-
-		await fs.writeFile(path.join(instance.tempRoot, 'storage', 'shared', 'launch-activity-demo.odt'), 'demo');
+		const adminUserId = requestResult.payload.user.id;
+		const userDocumentsRoot = path.join(instance.tempRoot, 'storage', 'users', adminUserId);
+		await fs.mkdir(userDocumentsRoot, { recursive: true });
+		await fs.writeFile(path.join(userDocumentsRoot, 'launch-activity-demo.odt'), 'demo');
 		requestResult = await client.request('/api/files');
 		assert.equal(requestResult.response.status, 200);
 		const fileEntry = (Array.isArray(requestResult.payload.documents) ? requestResult.payload.documents : [])
@@ -376,15 +361,10 @@ test('recycle flows record recycle, restore and final delete activities', async 
 			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
 		});
 		assert.equal(requestResult.response.status, 200);
-
-		requestResult = await client.request('/api/auth/storage-context', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ context: 'shared' })
-		});
-		assert.equal(requestResult.response.status, 200);
-
-		await fs.writeFile(path.join(instance.tempRoot, 'storage', 'shared', 'recycle-activity-demo.odt'), 'demo');
+		const adminUserId = requestResult.payload.user.id;
+		const userDocumentsRoot = path.join(instance.tempRoot, 'storage', 'users', adminUserId);
+		await fs.mkdir(userDocumentsRoot, { recursive: true });
+		await fs.writeFile(path.join(userDocumentsRoot, 'recycle-activity-demo.odt'), 'demo');
 		requestResult = await client.request('/api/files');
 		assert.equal(requestResult.response.status, 200);
 		const originalFile = (Array.isArray(requestResult.payload.documents) ? requestResult.payload.documents : [])

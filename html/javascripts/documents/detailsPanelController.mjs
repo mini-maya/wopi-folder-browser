@@ -293,20 +293,424 @@ export function createDetailsPanelController({
 		}
 	}
 
-	function renderShareTabContent(fileId, container) {
-		container.innerHTML = `
+	function formatShareStatus(status) {
+		const normalized = String(status || 'active').toLowerCase();
+		if (normalized === 'expired') {
+			return 'Expired';
+		}
+		if (normalized === 'exhausted') {
+			return 'Exhausted';
+		}
+		if (normalized === 'revoked') {
+			return 'Revoked';
+		}
+		return 'Active';
+	}
+
+	function toDateInputValue(isoValue) {
+		if (!isoValue) {
+			return '';
+		}
+		const date = new Date(isoValue);
+		if (Number.isNaN(date.getTime())) {
+			return '';
+		}
+		return date.toISOString().slice(0, 10);
+	}
+
+	function parseDateInputValue(value) {
+		const normalized = String(value || '').trim();
+		if (!normalized) {
+			return null;
+		}
+		const date = new Date(`${normalized}T23:59:59Z`);
+		if (Number.isNaN(date.getTime())) {
+			return null;
+		}
+		return date.toISOString();
+	}
+
+	function setShareFieldEnabled(section, selector, enabled) {
+		const field = section.querySelector(selector);
+		if (!field) {
+			return;
+		}
+		field.disabled = !enabled;
+		if (!enabled) {
+			field.value = '';
+		}
+	}
+
+	function setShareTabMessage(container, message, isError = false) {
+		const element = container.querySelector('.share-tab-message');
+		if (!element) {
+			return;
+		}
+		const text = String(message || '').trim();
+		element.textContent = text;
+		element.classList.toggle('is-error', isError);
+		element.classList.toggle('is-visible', Boolean(text));
+	}
+
+	function setSectionBusyState(section, isBusy) {
+		section.classList.toggle('is-busy', isBusy);
+		for (const control of section.querySelectorAll('button, input, select, textarea')) {
+			if (isBusy) {
+				control.dataset.busyWasDisabled = control.disabled ? '1' : '0';
+				control.disabled = true;
+				continue;
+			}
+			const wasDisabled = control.dataset.busyWasDisabled === '1';
+			delete control.dataset.busyWasDisabled;
+			control.disabled = wasDisabled;
+		}
+	}
+
+	async function copyShareLinkToClipboard(url) {
+		try {
+			await navigator.clipboard.writeText(url);
+			onSetStatus('Share link copied to clipboard.');
+		} catch (error) {
+			window.prompt('Copy share link', url);
+		}
+	}
+
+	function renderShareListMarkup(fileId, shares) {
+		const shareCards = shares.length
+			? shares.map((share) => {
+				const statusClass = String(share.status || 'active').toLowerCase();
+				return `
+					<div class="share-link-card" data-share-id="${share.id}">
+						<div class="share-link-header">
+							<span class="share-status-badge status-${escapeHtml(statusClass)}">${escapeHtml(formatShareStatus(share.status))}</span>
+							<small class="share-access-count">${escapeHtml(String(share.accessCount || 0))}${share.maxAccessCount ? ` / ${escapeHtml(String(share.maxAccessCount))}` : ''} accesses</small>
+						</div>
+						<label class="share-field">
+							<span>Public link</span>
+							<input type="text" class="share-url-input" value="${escapeHtml(share.url || '')}" readonly>
+						</label>
+						<div class="share-actions-inline">
+							<button type="button" class="secondary" data-share-action="copy-link">Copy link</button>
+						</div>
+						<div class="share-grid">
+							<label class="share-field">
+								<span>Permission</span>
+								<select class="share-permission-select">
+									<option value="read"${share.permission === 'read' ? ' selected' : ''}>Read</option>
+									<option value="read_write"${share.permission === 'read_write' ? ' selected' : ''}>Read & write</option>
+								</select>
+							</label>
+							<label class="share-field checkbox">
+								<input type="checkbox" class="share-download-enabled"${share.downloadEnabled !== false ? ' checked' : ''}>
+								<span>Download enabled</span>
+							</label>
+						</div>
+						<div class="share-grid">
+							<label class="share-field checkbox">
+								<input type="checkbox" class="share-password-enabled"${share.passwordEnabled ? ' checked' : ''}>
+								<span>Password protect</span>
+							</label>
+							<label class="share-field">
+								<span>New password</span>
+								<input type="password" class="share-password-input" placeholder="${share.passwordEnabled ? 'Leave empty to keep current password' : 'Optional'}">
+							</label>
+						</div>
+						<div class="share-grid">
+							<label class="share-field checkbox">
+								<input type="checkbox" class="share-expiry-enabled"${share.expiresAt ? ' checked' : ''}>
+								<span>Expires</span>
+							</label>
+							<label class="share-field">
+								<span>Expiry date</span>
+								<input type="date" class="share-expiry-input" value="${escapeHtml(toDateInputValue(share.expiresAt))}">
+							</label>
+						</div>
+						<div class="share-grid">
+							<label class="share-field checkbox">
+								<input type="checkbox" class="share-limit-enabled"${share.maxAccessCount ? ' checked' : ''}>
+								<span>Access limit</span>
+							</label>
+							<label class="share-field">
+								<span>Max accesses</span>
+								<input type="number" class="share-limit-input" min="1" step="1" value="${share.maxAccessCount ? escapeHtml(String(share.maxAccessCount)) : ''}">
+							</label>
+						</div>
+						<label class="share-field">
+							<span>Note</span>
+							<textarea class="share-note-input" rows="2">${escapeHtml(share.note || '')}</textarea>
+						</label>
+						<div class="share-actions-inline">
+							<button type="button" data-share-action="save">Save</button>
+							<button type="button" class="secondary" data-share-action="revoke">Revoke</button>
+							<button type="button" class="danger" data-share-action="delete">Delete</button>
+						</div>
+					</div>
+				`;
+			}).join('')
+			: '<div class="tab-empty">No public links for this file yet.</div>';
+
+		return `
 			<div class="tab-section">
-				<p class="tab-section-description">Share this file with others by creating a link.</p>
-				<button type="button" class="share-tab-btn" data-share-file-id="${fileId}">
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-					Create share link
-				</button>
+				<p class="tab-section-description">Create and manage public links for this file.</p>
+				<div class="share-tab-message" role="status" aria-live="polite"></div>
+				<form class="share-create-form" data-share-file-id="${fileId}">
+					<div class="share-grid">
+						<label class="share-field">
+							<span>Permission</span>
+							<select name="permission">
+								<option value="read" selected>Read</option>
+								<option value="read_write">Read & write</option>
+							</select>
+						</label>
+						<label class="share-field">
+							<span>Password (optional)</span>
+							<input type="password" name="password" placeholder="Optional">
+						</label>
+					</div>
+					<div class="share-grid">
+						<label class="share-field checkbox">
+							<input type="checkbox" name="downloadEnabled" checked>
+							<span>Download enabled</span>
+						</label>
+						<label class="share-field checkbox">
+							<input type="checkbox" name="expiresEnabled">
+							<span>Expires</span>
+						</label>
+					</div>
+					<div class="share-grid">
+						<label class="share-field">
+							<span>Expiry date</span>
+							<input type="date" name="expiresAt">
+						</label>
+						<label class="share-field checkbox">
+							<input type="checkbox" name="limitEnabled">
+							<span>Access limit</span>
+						</label>
+					</div>
+					<div class="share-grid">
+						<label class="share-field">
+							<span>Max accesses</span>
+							<input type="number" min="1" step="1" name="maxAccessCount" placeholder="Unlimited">
+						</label>
+						<label class="share-field">
+							<span>Note</span>
+							<input type="text" name="note" placeholder="Optional note">
+						</label>
+					</div>
+					<div class="share-actions-inline">
+						<button type="submit">Create public link</button>
+					</div>
+				</form>
+				<div class="share-list">
+					${shareCards}
+				</div>
 			</div>
 		`;
-		const shareBtn = container.querySelector('.share-tab-btn');
-		shareBtn.addEventListener('click', async function() {
-			await onCreateShare(fileId);
-		});
+	}
+
+	async function renderShareTabContent(fileId, container) {
+		container.innerHTML = '<div class="tab-loading">Loading shares…</div>';
+		try {
+			const payload = await requestJson(`/api/files/${encodeURIComponent(fileId)}/public-shares`);
+			const shares = Array.isArray(payload?.shares) ? payload.shares : [];
+			container.innerHTML = renderShareListMarkup(fileId, shares);
+
+			const createForm = container.querySelector('.share-create-form');
+			if (createForm) {
+				const expiresEnabledInput = createForm.querySelector('input[name="expiresEnabled"]');
+				const expiresAtInput = createForm.querySelector('input[name="expiresAt"]');
+				const limitEnabledInput = createForm.querySelector('input[name="limitEnabled"]');
+				const maxAccessInput = createForm.querySelector('input[name="maxAccessCount"]');
+				expiresEnabledInput?.addEventListener('change', function() {
+					setShareFieldEnabled(createForm, 'input[name="expiresAt"]', expiresEnabledInput.checked);
+				});
+				limitEnabledInput?.addEventListener('change', function() {
+					setShareFieldEnabled(createForm, 'input[name="maxAccessCount"]', limitEnabledInput.checked);
+				});
+				if (expiresAtInput) {
+					expiresAtInput.disabled = !expiresEnabledInput?.checked;
+				}
+				if (maxAccessInput) {
+					maxAccessInput.disabled = !limitEnabledInput?.checked;
+				}
+				createForm.addEventListener('submit', async function(event) {
+					event.preventDefault();
+					const formData = new FormData(createForm);
+					const expiresEnabled = formData.get('expiresEnabled') === 'on';
+					const limitEnabled = formData.get('limitEnabled') === 'on';
+					const rawMax = String(formData.get('maxAccessCount') || '').trim();
+					if (limitEnabled && (!rawMax || Number.parseInt(rawMax, 10) < 1)) {
+						setShareTabMessage(container, 'Max accesses must be an integer >= 1.', true);
+						onSetStatus('Max accesses must be an integer >= 1.', true);
+						return;
+					}
+					if (expiresEnabled && !parseDateInputValue(formData.get('expiresAt'))) {
+						setShareTabMessage(container, 'Please provide a valid expiry date.', true);
+						onSetStatus('Please provide a valid expiry date.', true);
+						return;
+					}
+					const body = {
+						permission: String(formData.get('permission') || 'read'),
+						password: String(formData.get('password') || '').trim() || null,
+						downloadEnabled: formData.get('downloadEnabled') === 'on',
+						expiresAt: expiresEnabled ? parseDateInputValue(formData.get('expiresAt')) : null,
+						maxAccessCount: limitEnabled ? Number.parseInt(rawMax, 10) : null,
+						note: String(formData.get('note') || '').trim() || null
+					};
+					setShareTabMessage(container, '');
+					setSectionBusyState(createForm, true);
+					try {
+						await requestJson(`/api/files/${encodeURIComponent(fileId)}/public-share`, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify(body)
+						});
+						await renderShareTabContent(fileId, container);
+						onSetStatus('Public link created.');
+					} catch (error) {
+						setShareTabMessage(container, error.message || 'Could not create public link.', true);
+						onSetStatus(error.message || 'Could not create public link.', true);
+					} finally {
+						setSectionBusyState(createForm, false);
+					}
+				});
+			}
+
+			for (const card of container.querySelectorAll('.share-link-card')) {
+				const shareId = card.getAttribute('data-share-id');
+				const copyButton = card.querySelector('[data-share-action="copy-link"]');
+				const saveButton = card.querySelector('[data-share-action="save"]');
+				const revokeButton = card.querySelector('[data-share-action="revoke"]');
+				const deleteButton = card.querySelector('[data-share-action="delete"]');
+				const urlInput = card.querySelector('.share-url-input');
+				const passwordEnabledInput = card.querySelector('.share-password-enabled');
+				const passwordInput = card.querySelector('.share-password-input');
+				const expiryEnabledInput = card.querySelector('.share-expiry-enabled');
+				const expiryInput = card.querySelector('.share-expiry-input');
+				const limitEnabledInput = card.querySelector('.share-limit-enabled');
+				const limitInput = card.querySelector('.share-limit-input');
+				passwordEnabledInput?.addEventListener('change', function() {
+					setShareFieldEnabled(card, '.share-password-input', passwordEnabledInput.checked);
+				});
+				expiryEnabledInput?.addEventListener('change', function() {
+					setShareFieldEnabled(card, '.share-expiry-input', expiryEnabledInput.checked);
+				});
+				limitEnabledInput?.addEventListener('change', function() {
+					setShareFieldEnabled(card, '.share-limit-input', limitEnabledInput.checked);
+				});
+				if (passwordInput) {
+					passwordInput.disabled = !passwordEnabledInput?.checked;
+				}
+				if (expiryInput) {
+					expiryInput.disabled = !expiryEnabledInput?.checked;
+				}
+				if (limitInput) {
+					limitInput.disabled = !limitEnabledInput?.checked;
+				}
+				const isRevoked = card.querySelector('.share-status-badge')?.classList.contains('status-revoked');
+				if (isRevoked) {
+					for (const control of card.querySelectorAll('input, select, textarea, button')) {
+						if (control !== copyButton && control !== deleteButton) {
+							control.disabled = true;
+						}
+					}
+				}
+
+				copyButton?.addEventListener('click', async function() {
+					await copyShareLinkToClipboard(urlInput?.value || '');
+				});
+
+				saveButton?.addEventListener('click', async function() {
+					const permission = card.querySelector('.share-permission-select')?.value || 'read';
+					const downloadEnabled = card.querySelector('.share-download-enabled')?.checked === true;
+					const passwordEnabled = passwordEnabledInput?.checked === true;
+					const expiresEnabled = expiryEnabledInput?.checked === true;
+					const limitEnabled = limitEnabledInput?.checked === true;
+					const note = card.querySelector('.share-note-input')?.value || '';
+					const payload = {
+						permission: permission,
+						downloadEnabled: downloadEnabled,
+						expiresAt: expiresEnabled ? parseDateInputValue(expiryInput?.value) : null,
+						maxAccessCount: limitEnabled
+							? Number.parseInt(String(limitInput?.value || '').trim(), 10)
+							: null,
+						note: note.trim() || null
+					};
+					if (limitEnabled && (!Number.isInteger(payload.maxAccessCount) || payload.maxAccessCount < 1)) {
+						setShareTabMessage(container, 'Max accesses must be an integer >= 1.', true);
+						onSetStatus('Max accesses must be an integer >= 1.', true);
+						return;
+					}
+					if (expiresEnabled && !payload.expiresAt) {
+						setShareTabMessage(container, 'Please provide a valid expiry date.', true);
+						onSetStatus('Please provide a valid expiry date.', true);
+						return;
+					}
+					if (!passwordEnabled) {
+						payload.password = null;
+					} else if (String(passwordInput?.value || '').trim()) {
+						payload.password = String(passwordInput.value).trim();
+					}
+					setShareTabMessage(container, '');
+					setSectionBusyState(card, true);
+					try {
+						await requestJson(`/api/public-shares/${encodeURIComponent(shareId)}`, {
+							method: 'PATCH',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify(payload)
+						});
+						await renderShareTabContent(fileId, container);
+						onSetStatus('Public link updated.');
+					} catch (error) {
+						setShareTabMessage(container, error.message || 'Could not update public link.', true);
+						onSetStatus(error.message || 'Could not update public link.', true);
+					} finally {
+						setSectionBusyState(card, false);
+					}
+				});
+
+				revokeButton?.addEventListener('click', async function() {
+					setShareTabMessage(container, '');
+					setSectionBusyState(card, true);
+					try {
+						await requestJson(`/api/public-shares/${encodeURIComponent(shareId)}`, {
+							method: 'PATCH',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({ status: 'revoked' })
+						});
+						await renderShareTabContent(fileId, container);
+						onSetStatus('Public link revoked.');
+					} catch (error) {
+						setShareTabMessage(container, error.message || 'Could not revoke public link.', true);
+						onSetStatus(error.message || 'Could not revoke public link.', true);
+					} finally {
+						setSectionBusyState(card, false);
+					}
+				});
+
+				deleteButton?.addEventListener('click', async function() {
+					if (!window.confirm('Delete this public link?')) {
+						return;
+					}
+					setShareTabMessage(container, '');
+					setSectionBusyState(card, true);
+					try {
+						await requestJson(`/api/public-shares/${encodeURIComponent(shareId)}`, {
+							method: 'DELETE'
+						});
+						await renderShareTabContent(fileId, container);
+						onSetStatus('Public link deleted.');
+					} catch (error) {
+						setShareTabMessage(container, error.message || 'Could not delete public link.', true);
+						onSetStatus(error.message || 'Could not delete public link.', true);
+					} finally {
+						setSectionBusyState(card, false);
+					}
+				});
+			}
+		} catch (error) {
+			container.innerHTML = `<div class="tab-empty tab-error">Could not load shares: ${escapeHtml(error.message)}</div>`;
+		}
 	}
 
 	async function renderActivityTabContent(fileId, container) {

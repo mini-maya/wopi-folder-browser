@@ -1,5 +1,5 @@
 node_modules/
 .idea
-example-documents
-wopi-state
 .DS_Store
+wopi_dev_folder/**
+!wopi_dev_folder/**/.gitkeep

@@ -72,7 +72,7 @@ test('renderOfficeThumbnail returns THUMBNAIL_RENDERED and stores PNG', async fu
 
 		assert.equal(result.status, 'THUMBNAIL_RENDERED');
 		assert.equal(result.mimeType, 'image/png');
-		assert.equal(result.thumbnailUrl, '/api/thumbnails/file-123/7');
+		assert.equal(result.thumbnailUrl, '/storage/documents/thumbnails/file-123/7');
 		assert.ok(result.width <= 512);
 		assert.ok(result.height <= 512);
 	} finally {

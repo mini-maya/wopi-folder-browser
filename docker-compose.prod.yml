@@ -1,3 +1,5 @@
+# Production deployment for WOPI Folder Browser behind a TLS-terminating reverse proxy.
+# Host folders are required and must exist before Docker starts.
 services:
   app:
     build:
@@ -6,6 +8,10 @@ services:
       PORT: 3000
       DOCUMENT_ROOT: /documents
       WOPI_STATE_ROOT: /var/lib/wopi-state
+      # Shared storage mode: disabled, auth, readonly, or readwrite.
+      SHARED_STORAGE_MODE: ${SHARED_STORAGE_MODE:-disabled}
+      SHARED_STORAGE_ROOT: ${SHARED_STORAGE_ROOT:-/shared}
+      # External storage is optional. Manage allowedUserIds via POST /api/admin/external-acl.
       APP_BASE_URL: https://office.lan
       COLLABORA_INTERNAL_URL: https://collabora.lan
       COLLABORA_PUBLIC_URL: https://collabora.lan
@@ -17,7 +23,10 @@ services:
     expose:
       - "3000"
     volumes:
+      # Required host folders: document-storage, shared-storage, external-storage, wopi-state
       - ${DOCUMENTS_HOST_PATH:?set DOCUMENTS_HOST_PATH}:/documents
+      - ${SHARED_STORAGE_HOST_PATH:?set SHARED_STORAGE_HOST_PATH}:/shared
+      - ${EXTERNAL_STORAGE_HOST_PATH:?set EXTERNAL_STORAGE_HOST_PATH}:/external/storage
       - ${COLLABORA_CA_CERT_PATH:?set COLLABORA_CA_CERT_PATH}:/run/certs/collabora-ca.crt:ro
       - ${WOPI_STATE_ROOT:?set WOPI_STATE_ROOT}:/var/lib/wopi-state
     restart: unless-stopped

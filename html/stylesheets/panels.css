@@ -64,6 +64,154 @@
   align-self: flex-start;
 }
 
+.share-create-form,
+.share-link-card {
+  display: grid;
+  gap: 0.6rem;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: var(--surface-subtle);
+}
+
+.share-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.share-tab-message {
+  display: none;
+  font-size: 0.8rem;
+  color: var(--subtle-text);
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-default);
+}
+
+.share-tab-message.is-visible {
+  display: block;
+}
+
+.share-tab-message.is-error {
+  color: var(--status-error-text);
+  border-color: var(--status-error-text);
+  background: var(--status-error-bg);
+}
+
+.share-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.share-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+  align-items: stretch;
+}
+
+.share-field > span {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 0.75rem;
+  color: var(--muted-text);
+}
+
+.share-field.checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.45rem;
+  min-height: 2.2rem;
+}
+
+.share-field.checkbox > span {
+  font-size: 0.8rem;
+  width: auto;
+  line-height: 1.25;
+}
+
+.share-field:not(.checkbox) textarea,
+.share-field:not(.checkbox) input,
+.share-field:not(.checkbox) select {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  background: var(--panel-bg);
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+}
+
+.share-field.checkbox input {
+  width: auto;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.share-link-header,
+.share-actions-inline {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.share-link-header {
+  justify-content: space-between;
+}
+
+.share-create-form.is-busy,
+.share-link-card.is-busy {
+  opacity: 0.65;
+}
+
+.share-status-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: var(--surface-subtle);
+  color: var(--text-main);
+}
+
+.share-status-badge.status-active {
+  background: rgba(16, 185, 129, 0.18);
+  color: #059669;
+}
+
+.share-status-badge.status-expired,
+.share-status-badge.status-exhausted {
+  background: rgba(245, 158, 11, 0.2);
+  color: #b45309;
+}
+
+.share-status-badge.status-revoked {
+  background: rgba(239, 68, 68, 0.18);
+  color: #b91c1c;
+}
+
+.share-access-count {
+  color: var(--muted-text);
+  font-size: 0.75rem;
+}
+
+.share-url-input {
+  font-family: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.76rem;
+}
+
 .tab-loading,
 .tab-empty {
   color: var(--muted-text);
@@ -263,4 +411,3 @@
   padding: 0.45rem 0.65rem;
   border-radius: 8px;
 }
-

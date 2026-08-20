@@ -5,28 +5,26 @@ export function createAuthController({
 	formatDate,
 	setStatus,
 	resetFilesViewState,
+	clearDocuments,
 	loadPage,
 	closeViewer
 }) {
+	let externalAclUserIds = new Set();
+
 	function renderAuthControls() {
 		const authenticated = Boolean(appState.auth?.authenticated);
 		const role = appState.auth?.user?.role || 'user';
-		const currentContext = appState.auth?.storageContext || 'shared';
 
 		elements.loginButton.classList.toggle('hidden', authenticated);
 		elements.logoutButton.classList.toggle('hidden', !authenticated);
 		elements.accountButton.classList.toggle('hidden', !authenticated);
 		elements.adminButton.classList.toggle('hidden', !(authenticated && role === 'admin'));
-		elements.myFilesButton.classList.toggle('hidden', !authenticated);
-		elements.sharedFilesButton.classList.toggle('hidden', !authenticated);
+		elements.myFilesButton.classList.add('hidden');
+		elements.sharedFilesButton.classList.add('hidden');
 		if (elements.recycleButton) {
 			elements.recycleButton.classList.toggle('hidden', !authenticated);
 			elements.recycleButton.disabled = !authenticated;
 		}
-		elements.myFilesButton.disabled = !authenticated || currentContext === 'personal';
-		elements.sharedFilesButton.disabled = !authenticated || currentContext === 'shared';
-		elements.myFilesButton.classList.toggle('is-active', authenticated && currentContext === 'personal');
-		elements.sharedFilesButton.classList.toggle('is-active', authenticated && currentContext === 'shared');
 	}
 
 	function applyPasswordPolicyToForms(minLength) {
@@ -87,21 +85,12 @@ export function createAuthController({
 
 	async function logoutCurrentUser() {
 		await requestJson('/api/auth/logout', { method: 'POST' });
+		clearDocuments();
 		await closeViewer();
 		await loadPage();
 	}
 
-	async function switchStorageContext(context) {
-		await requestJson('/api/auth/storage-context', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ context: context })
-		});
-		if (resetFilesViewState) {
-			resetFilesViewState();
-		}
-		await loadPage();
-	}
+	async function switchStorageContext() {}
 
 	async function submitAccountForm(event) {
 		event.preventDefault();
@@ -129,7 +118,7 @@ export function createAuthController({
 		if (appState.adminUsers.length === 0) {
 			const row = document.createElement('tr');
 			const cell = document.createElement('td');
-			cell.colSpan = 5;
+			cell.colSpan = 6;
 			cell.textContent = 'No users found.';
 			row.appendChild(cell);
 			elements.adminUsersBody.appendChild(row);
@@ -146,6 +135,46 @@ export function createAuthController({
 			statusCell.textContent = user.active ? 'active' : 'disabled';
 			const createdCell = document.createElement('td');
 			createdCell.textContent = formatDate(user.created_at);
+			const externalAccessCell = document.createElement('td');
+			const externalAccessLabel = document.createElement('label');
+			externalAccessLabel.className = 'checkbox-field';
+			const externalAccessToggle = document.createElement('input');
+			externalAccessToggle.type = 'checkbox';
+			externalAccessToggle.checked = externalAclUserIds.has(String(user.id));
+			externalAccessToggle.disabled = !user.active;
+			externalAccessToggle.title = user.active
+				? 'Allow this user to access external storage.'
+				: 'Enable the user account before granting external storage access.';
+			externalAccessToggle.addEventListener('change', async function() {
+				const nextAllowedUserIds = new Set(externalAclUserIds);
+				const userId = String(user.id);
+				if (externalAccessToggle.checked) {
+					nextAllowedUserIds.add(userId);
+				} else {
+					nextAllowedUserIds.delete(userId);
+				}
+				externalAccessToggle.disabled = true;
+				try {
+					const payload = await requestJson('/api/admin/external-acl', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ allowedUserIds: [...nextAllowedUserIds] })
+					});
+					const persistedUserIds = Array.isArray(payload?.allowedUserIds)
+						? payload.allowedUserIds.map((id) => String(id))
+						: [];
+					externalAclUserIds = new Set(persistedUserIds);
+					externalAccessToggle.checked = externalAclUserIds.has(userId);
+					setStatus(`External storage access for "${user.username}" updated.`);
+				} catch (error) {
+					externalAccessToggle.checked = externalAclUserIds.has(userId);
+					setStatus(error.message, true);
+				} finally {
+					externalAccessToggle.disabled = !user.active;
+				}
+			});
+			externalAccessLabel.appendChild(externalAccessToggle);
+			externalAccessCell.appendChild(externalAccessLabel);
 			const actionsCell = document.createElement('td');
 			const actionContainer = document.createElement('div');
 			actionContainer.className = 'admin-user-actions';
@@ -203,7 +232,7 @@ export function createAuthController({
 
 			actionContainer.append(toggleButton, resetButton, deleteButton);
 			actionsCell.appendChild(actionContainer);
-			row.append(usernameCell, roleCell, statusCell, createdCell, actionsCell);
+			row.append(usernameCell, roleCell, statusCell, createdCell, externalAccessCell, actionsCell);
 			elements.adminUsersBody.appendChild(row);
 		}
 	}
@@ -214,13 +243,20 @@ export function createAuthController({
 		renderAdminUsers();
 	}
 
+	async function loadExternalAcl() {
+		const payload = await requestJson('/api/admin/external-acl');
+		const allowedUserIds = Array.isArray(payload?.allowedUserIds) ? payload.allowedUserIds : [];
+		externalAclUserIds = new Set(allowedUserIds.map((id) => String(id)));
+	}
+
 	async function openAdminUserManagement() {
 		elements.adminGeneratedPassword.textContent = '';
 		elements.adminGeneratedPassword.classList.add('hidden');
 		elements.adminCreateUserForm.reset();
 		elements.adminCreateGeneratePassword.checked = true;
 		elements.adminCreatePassword.disabled = true;
-		await loadAdminUsers();
+		await Promise.all([loadAdminUsers(), loadExternalAcl()]);
+		renderAdminUsers();
 		openModal(elements.adminModal);
 	}
 
@@ -255,6 +291,7 @@ export function createAuthController({
 		elements.adminCreateUserForm.reset();
 		elements.adminCreateGeneratePassword.checked = true;
 		elements.adminCreatePassword.disabled = true;
+		await loadExternalAcl();
 		await loadAdminUsers();
 	}
 

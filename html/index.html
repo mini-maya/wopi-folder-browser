@@ -37,6 +37,10 @@
          <h1>WOPI Folder Browser</h1>
        </div>
        <div class="heading-actions">
+         <label class="theme-label" for="storage-select">Storage</label>
+         <select id="storage-select" aria-label="Storage">
+           <option value="documents">Documents</option>
+         </select>
          <label class="theme-label" for="theme-select">Theme</label>
          <select id="theme-select" aria-label="Theme">
            <option value="auto">Auto</option>
@@ -233,6 +237,30 @@
    </div>
  </div>
 
+ <div id="share-password-modal" class="modal hidden" aria-hidden="true">
+   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="share-password-modal-title">
+     <div class="modal-header">
+       <h3 id="share-password-modal-title">Protected share link</h3>
+       <button id="share-password-cancel" type="button" class="secondary icon-button" aria-label="Close password dialog">
+         <svg class="close-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+           <path d="M7 7L17 17M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+         </svg>
+       </button>
+     </div>
+     <form id="share-password-form" class="modal-body">
+       <p class="modal-description">This public link is password-protected.</p>
+       <label class="modal-field">
+         <span>Password</span>
+         <input id="share-password-input" type="password" autocomplete="current-password" required>
+       </label>
+       <p id="share-password-error" class="modal-error hidden" role="alert"></p>
+       <div class="modal-actions">
+         <button type="submit">Open shared document</button>
+       </div>
+     </form>
+   </div>
+ </div>
+
  <div id="account-modal" class="modal hidden" aria-hidden="true">
    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="account-modal-title">
      <div class="modal-header">
@@ -309,6 +337,7 @@
                  <th>Role</th>
                  <th>Status</th>
                  <th>Created</th>
+                 <th>External access</th>
                  <th>Actions</th>
                </tr>
              </thead>

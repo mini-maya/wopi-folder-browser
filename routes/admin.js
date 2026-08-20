@@ -6,7 +6,6 @@ const config = require('../lib/config');
 const { createHttpError } = require('../lib/errors');
 const { generatePassword, hashPassword } = require('../lib/passwords');
 const { requireAdmin } = require('../lib/sessionAuth');
-const { ensureUserStorageRoot } = require('../lib/storageContext');
 const {
 	createUser,
 	deleteUser,
@@ -56,7 +55,6 @@ router.post('/users', async function(req, res, next) {
 			active: true,
 			mustChangePassword: generateInitialPassword
 		});
-		await ensureUserStorageRoot(config, user.id);
 
 		res.status(201).json({
 			user: toPublicUser(user),
@@ -123,6 +121,35 @@ router.post('/users/:userId/reset-password', async function(req, res, next) {
 		await setUserPassword(config.documentRoot, targetUserId, passwordHash, true);
 		res.json({
 			generatedPassword: useGeneratedPassword ? plainPassword : null
+		});
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.get('/external-acl', async function(req, res, next) {
+	try {
+		const storageManager = req.app.locals.storageManager;
+		await storageManager.ensureInitialized();
+		const externalStorage = storageManager.storages.find((s) => s.id === 'external');
+		res.json({
+			allowedUserIds: Array.isArray(externalStorage?.allowedUserIds) ? externalStorage.allowedUserIds : []
+		});
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.post('/external-acl', async function(req, res, next) {
+	try {
+		const storageManager = req.app.locals.storageManager;
+		await storageManager.ensureInitialized();
+		const allowedUserIds = Array.isArray(req.body.allowedUserIds)
+			? req.body.allowedUserIds.map((id) => String(id).trim()).filter(Boolean)
+			: [];
+		await storageManager.updateExternalAcl(allowedUserIds);
+		res.json({
+			allowedUserIds: allowedUserIds
 		});
 	} catch (error) {
 		next(error);

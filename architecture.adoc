@@ -1,0 +1,501 @@
+= Architecture Documentation: wopi-folder-browser
+:toc:
+:toclevels: 3
+:sectnums:
+:source-highlighter: rouge
+
+== Purpose and Scope
+
+This document describes the current target architecture with multi-storage support
+(`documents` + `external`) and a provider-capable storage layer.
+
+Focus areas:
+
+* clear separation of UI, API, WOPI, and storage
+* unique document identity per storage
+* secure path resolution (traversal/symlink protection)
+* read-only and availability behavior
+* extensibility for future providers (WebDAV/SMB/S3)
+
+== High-Level Architecture
+
+[plantuml, arch-overview-en, svg]
+....
+@startuml
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+actor Browser
+actor "Collabora Online" as Collabora
+
+rectangle "wopi-folder-browser" {
+  [Frontend SPA]
+  [REST API]
+  [WOPI Endpoints]
+  [StorageManager]
+  [DocumentStore]
+  [DocumentResolver]
+  [State Stores]
+}
+
+database "Storage: documents" as S1
+database "Storage: external" as S2
+database "WOPI_STATE_ROOT/common + storages/*" as StateRoot
+
+Browser --> [Frontend SPA]
+[Frontend SPA] --> [REST API]
+Collabora --> [WOPI Endpoints]
+[REST API] --> [DocumentStore]
+[WOPI Endpoints] --> [DocumentResolver]
+[DocumentResolver] --> [DocumentStore]
+[DocumentStore] --> [StorageManager]
+[StorageManager] --> S1
+[StorageManager] --> S2
+[DocumentStore] --> [State Stores]
+[State Stores] --> StateRoot
+@enduml
+....
+
+== Layer Model
+
+[plantuml, layers-en, svg]
+....
+@startuml
+skinparam shadowing false
+package "Presentation" {
+  [html/index.html]
+  [html/javascripts/*]
+}
+package "Application" {
+  [routes/api.js]
+  [routes/apiDocuments.js]
+  [routes/wopi.js]
+  [routes/auth.js]
+}
+package "Domain" {
+  [lib/documentStore.js]
+  [lib/documentResolver.js]
+}
+package "Infrastructure" {
+  [lib/storage/storageManager.js]
+  [lib/storage/storageRegistry.js]
+  [lib/storage/providers/localStorageProvider.js]
+  [lib/statePaths.js + state stores]
+}
+
+[html/javascripts/*] --> [routes/api.js]
+[routes/api.js] --> [routes/apiDocuments.js]
+[routes/apiDocuments.js] --> [lib/documentStore.js]
+[routes/wopi.js] --> [lib/documentResolver.js]
+[lib/documentResolver.js] --> [lib/documentStore.js]
+[lib/documentStore.js] --> [lib/storage/storageManager.js]
+[lib/storage/storageManager.js] --> [lib/storage/providers/localStorageProvider.js]
+[lib/documentStore.js] --> [lib/statePaths.js + state stores]
+@enduml
+....
+
+== Storage Model
+
+Example configuration (persisted in `WOPI_STATE_ROOT/common/storages.json`):
+
+[source,json]
+----
+{
+  "storages": [
+    {
+      "id": "documents",
+      "name": "Documents",
+      "type": "local",
+      "root": "/documents",
+      "enabled": true,
+      "readOnly": false,
+      "system": true
+    },
+    {
+      "id": "external",
+      "name": "External Storage",
+      "type": "local",
+      "root": "/external/storage",
+      "enabled": true,
+      "readOnly": false,
+      "system": false
+    }
+  ]
+}
+----
+
+Key rules:
+
+* `id` is stable and technically relevant.
+* `name` is presentation only.
+* `root` is always a container path, never a host path.
+* `enabled=false` disables a storage at runtime.
+* `readOnly=true` blocks mutating operations.
+
+== Startup and Registry/Health Flow
+
+[plantuml, startup-health-en, svg]
+....
+@startuml
+skinparam shadowing false
+
+start
+:App start;
+:StorageManager.initialize();
+:load/create storages.json;
+
+repeat
+  :for each enabled storage;
+  :instantiate provider;
+  :healthCheck (exists/dir/read/write);
+  if (healthy?) then (yes)
+    :mark available=true;
+    :log "[storage] <id>: OK";
+  else (no)
+    :mark available=false;
+    :log unavailable reason;
+  endif
+repeat while (more storages?) is (yes)
+
+:ready to serve requests;
+stop
+@enduml
+....
+
+== Request Routing and Storage Resolution
+
+Storage is resolved using:
+
+1. URL prefix `/storage/<id>`
+2. Header `X-Storage-Id`
+3. Query `storageId`
+4. Session `selectedStorageId`
+5. Fallback `documents`
+
+[plantuml, request-storage-resolution-en, svg]
+....
+@startuml
+skinparam shadowing false
+start
+:incoming request;
+if (path starts with /storage/<id>?) then (yes)
+  :use id from path;
+elseif (X-Storage-Id present?) then (yes)
+  :use id from header;
+elseif (query storageId present?) then (yes)
+  :use id from query;
+elseif (session selectedStorageId?) then (yes)
+  :use id from session;
+else (fallback)
+  :use documents;
+endif
+
+:StorageManager.resolveOrHttpError(id);
+if (available?) then (yes)
+  :attach req.storage;
+else (no)
+  :API/WOPI -> error;
+  :UI routes -> safe fallback;
+endif
+stop
+@enduml
+....
+
+== Document Identity
+
+Documents are storage-aware:
+
+* logical reference: `storageId + relativePath`
+* API/WOPI object identity: stable `fileId` (storage-scoped registry)
+
+[plantuml, document-identity-en, svg]
+....
+@startuml
+skinparam shadowing false
+entity "DocumentReference" as DR {
+  * storageId : string
+  * path : string
+}
+
+entity "FileRegistryEntry" as FR {
+  * fileId : string
+  * relativePath : string
+}
+
+database "State: storages/<hash>/file-registry.json" as REG
+
+DR --> FR : resolve/register
+FR --> REG : persisted per storage namespace
+@enduml
+....
+
+== WOPI End-to-End Flow
+
+[plantuml, wopi-flow-en, svg]
+....
+@startuml
+skinparam shadowing false
+actor Collabora
+participant "routes/wopi.js" as WOPI
+participant "Token Verify" as TV
+participant "StorageManager" as SM
+participant "DocumentStore" as DS
+participant "Provider(local)" as P
+participant "Version/Preview/Activity Stores" as ST
+
+Collabora -> WOPI : CheckFileInfo/GetFile/PutFile/Lock/Rename
+WOPI -> TV : verify access_token (incl. storageId)
+TV --> WOPI : claims
+WOPI -> SM : resolve storageId
+SM --> WOPI : storage + provider
+WOPI -> DS : getDocumentById(storage.root, fileId)
+DS --> WOPI : document metadata
+
+alt PutFile
+  WOPI -> P : write(relativePath, binary)
+  WOPI -> ST : version snapshot + preview invalidation + activity
+end
+
+alt RenameFile
+  WOPI -> DS : renameOrMoveDocument(storage.root, fileId, ...)
+end
+@enduml
+....
+
+== Storage-Related API Surfaces
+
+=== Public API
+
+* `GET /api/storages` +
+  returns storage metadata without internal `root` paths.
+* existing document APIs execute against the currently resolved storage.
+
+=== Admin API
+
+* `GET /api/admin/external-acl` +
+  returns the current `allowedUserIds` for the external storage.
+* `POST /api/admin/external-acl` +
+  updates the external-storage allowlist.
+
+== State Layout
+
+[plantuml, state-layout-en, svg]
+....
+@startuml
+skinparam shadowing false
+folder "WOPI_STATE_ROOT" {
+  folder "common" {
+    file "storages.json"
+    file "users.json"
+    file "shares.json"
+    folder "sessions/"
+    file "install-state.json"
+  }
+  folder "storages" {
+    folder "<hash-documents>" {
+      file "file-registry.json"
+      file "activities.json"
+      file "preview-cache.json"
+      folder "thumbnails/"
+      folder "versions/"
+      file "recycled.json"
+    }
+    folder "<hash-external>" {
+      file "file-registry.json"
+      file "activities.json"
+      file "preview-cache.json"
+      folder "thumbnails/"
+      folder "versions/"
+      file "recycled.json"
+    }
+  }
+}
+@enduml
+....
+
+== Security Architecture
+
+=== Access Control Matrix
+
+The application implements a role-based access control system across four storage types:
+
+[cols="1,2,2,2,2", options="header"]
+|====
+| Storage | Anonymous | Auth User | Admin | Notes
+| `documents` | ❌ | ✅ User-scoped | ✅ | Per-user isolation in `/documents/users/<userId>/`
+| `shared` | Mode-dependent | Mode-dependent | ✅ | Configurable: disabled/auth/readonly/readwrite
+| `external` | ❌ | ACL-dependent | ✅ | Empty ACL = all auth users; filled ACL = whitelist only
+| `recycle` | ❌ | ✅ Same user | ✅ | Per-user recycle bin
+|====
+
+=== Shared Storage Mode (Configurable)
+
+The `shared` storage is configured via `SHARED_STORAGE_MODE` environment variable:
+
+* `disabled` (default): not visible, not accessible
+* `auth`: visible only to authenticated users, read-write
+* `readonly`: visible to all (including anonymous), read-only
+* `readwrite`: visible to all (including anonymous), read-write
+
+=== Per-User Document Root Isolation
+
+Authenticated users automatically receive an isolated document root:
+
+----
+Host:    /srv/wopi/documents/
+         └─ user1/
+         └─ user2/
+
+Container: /documents/users/
+           └─ <user-id-1>/    (only User 1 sees this content)
+           └─ <user-id-2>/    (only User 2 sees this content)
+----
+
+Unauthenticated requests/shares use a shared root: `/documents/shared`
+
+=== External Storage ACL
+
+`external` storage is configured with `allowedUserIds` (persisted in `storages.json`):
+
+* Empty ACL: All authenticated users can access
+* Filled ACL: Only user IDs in the list can access
+* Unauthenticated users: Always denied (403)
+
+Administration via `/api/admin/external-acl`:
+----
+GET /api/admin/external-acl
+    → { "allowedUserIds": ["alice", "bob"] }
+
+POST /api/admin/external-acl
+    → { "allowedUserIds": ["alice"] }
+    → Persisted in storages.json
+----
+
+=== Path Security
+
+Central rules in `lib/storage/storagePath.js`:
+
+* relative paths only
+* no absolute paths
+* no `.` / `..` traversal segments
+* backslashes are normalized and validated
+* parent `realpath` check prevents symlink escapes
+
+[plantuml, path-security-en, svg]
+....
+@startuml
+skinparam shadowing false
+start
+:input relativePath;
+:normalize (/ + \\ handling);
+if (absolute?) then (yes)
+  :reject;
+  stop
+endif
+if (contains . or .. segments?) then (yes)
+  :reject;
+  stop
+endif
+:resolve candidate under root;
+if (candidate outside root?) then (yes)
+  :reject;
+  stop
+endif
+:realpath(existing parent);
+if (parent outside root?) then (yes)
+  :reject;
+  stop
+endif
+:safe absolute path;
+stop
+@enduml
+....
+
+=== Read-Only Enforcement
+
+* Backend blocks mutating operations (API + WOPI).
+* Provider centrally blocks write/delete/rename/copy/mkdir.
+* UI disables mutating actions for read-only storages.
+
+== Deployment View (Docker Compose)
+
+[plantuml, deployment-compose-en, svg]
+....
+@startuml
+skinparam shadowing false
+node "Host" {
+  folder "DOCUMENTS_HOST_PATH" as H1
+  folder "EXTERNAL_STORAGE_HOST_PATH" as H2
+  folder "WOPI_STATE_ROOT" as H3
+}
+
+node "Container: app" {
+  folder "/documents" as C1
+  folder "/external/storage" as C2
+  folder "/var/lib/wopi-state" as C3
+  component "wopi-folder-browser"
+}
+
+node "Container: collabora" {
+  component "Collabora CODE"
+}
+
+H1 <--> C1 : bind mount
+H2 <--> C2 : bind mount
+H3 <--> C3 : bind mount
+"Collabora CODE" --> "wopi-folder-browser" : WOPI callbacks
+@enduml
+....
+
+== Extensibility
+
+Provider selection is driven by `storage.type`.
+
+[plantuml, provider-extensibility-en, svg]
+....
+@startuml
+skinparam shadowing false
+interface "StorageProvider" {
+  +list(path)
+  +stat(path)
+  +exists(path)
+  +read(path)
+  +write(path,data)
+  +delete(path)
+  +rename(src,dst)
+  +copy(src,dst)
+  +mkdir(path)
+  +healthCheck()
+}
+
+class "LocalStorageProvider" as LSP
+class "WebDavStorageProvider" as WDP
+class "SmbStorageProvider" as SMB
+class "S3StorageProvider" as S3
+
+StorageProvider <|.. LSP
+StorageProvider <|.. WDP
+StorageProvider <|.. SMB
+StorageProvider <|.. S3
+@enduml
+....
+
+== Operational Notes
+
+* If `/external/storage` is missing, the app stays available; the storage is marked unavailable.
+* Host paths are never exposed through API or frontend.
+* Startup logs include per-storage health status.
+
+== Test Coverage (Architecture-Relevant)
+
+* `test/storageProvider.test.js`
+  ** provider core operations
+  ** traversal/absolute/backslash protection
+  ** symlink escape protection
+  ** read-only behavior
+* existing API/WOPI/state tests remain green and cover integration paths.
+
+== PlantUML Build Hint for AsciiDoc
+
+For rendered diagrams, `asciidoctor-diagram` is typically used.
+Without a diagram plugin, PlantUML source blocks remain visible as text.

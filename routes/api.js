@@ -5,11 +5,50 @@ const express = require('express');
 
 const config = require('../lib/config');
 const { getSupportedFormats } = require('../lib/discovery');
+const { requireAdmin } = require('../lib/sessionAuth');
 const documentsRouter = require('./apiDocuments');
 
 const router = express.Router();
 
 router.use(documentsRouter);
+
+router.get('/storages', async function(req, res, next) {
+  try {
+    const storageManager = req.app.locals.storageManager;
+    await storageManager.ensureInitialized();
+    const mode = String(config.sharedStorageMode || 'disabled').trim().toLowerCase();
+    const storageAclById = new Map((storageManager.storages || []).map((storage) => [storage.id, storage]));
+    const visibleStorages = storageManager.list().filter((entry) => {
+      if (!entry.enabled) {
+        return false;
+      }
+      if (entry.id === 'documents') {
+        return Boolean(req.auth?.authenticated);
+      }
+      if (entry.id === 'shared') {
+        if (mode === 'disabled') {
+          return false;
+        }
+        if (mode === 'auth') {
+          return Boolean(req.auth?.authenticated);
+        }
+        return true;
+      }
+      if (entry.id === 'external') {
+        if (!req.auth?.authenticated) {
+          return false;
+        }
+        const aclSource = storageAclById.get(entry.id);
+        const allowedUsers = Array.isArray(aclSource?.allowedUserIds) ? aclSource.allowedUserIds.map((id) => String(id)) : [];
+        return allowedUsers.length > 0 && allowedUsers.includes(String(req.auth.user.id));
+      }
+      return true;
+    });
+    res.json(visibleStorages);
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get('/admin/config', async function(req, res, next) {
   try {

@@ -12,9 +12,80 @@ export function createViewerSessionController({
 	defaultViewerSubtitle
 }) {
 	const FILE_TYPE_CLASS = new Set(['text', 'spreadsheet', 'presentation']);
+	const SHARE_PASSWORD_REQUIRED = 'SHARE_PASSWORD_REQUIRED';
+	const INVALID_SHARE_PASSWORD = 'INVALID_SHARE_PASSWORD';
 
 	function isShareSessionPath() {
 		return window.location.pathname.startsWith('/share/');
+	}
+
+	function openModal(modalElement) {
+		if (!modalElement) {
+			return;
+		}
+		modalElement.classList.remove('hidden');
+		modalElement.setAttribute('aria-hidden', 'false');
+	}
+
+	function closeModal(modalElement) {
+		if (!modalElement) {
+			return;
+		}
+		modalElement.classList.add('hidden');
+		modalElement.setAttribute('aria-hidden', 'true');
+	}
+
+	function setSharePasswordModalError(message) {
+		if (!elements.sharePasswordError) {
+			return;
+		}
+		const hasMessage = Boolean(String(message || '').trim());
+		elements.sharePasswordError.textContent = hasMessage ? String(message) : '';
+		elements.sharePasswordError.classList.toggle('hidden', !hasMessage);
+	}
+
+	function getShareLaunchErrorCode(error) {
+		return String(error?.payload?.error || error?.message || '').trim();
+	}
+
+	async function promptSharePassword(message) {
+		if (!elements.sharePasswordModal || !elements.sharePasswordForm || !elements.sharePasswordInput || !elements.sharePasswordCancel) {
+			return window.prompt(message || 'Please enter the share password') || null;
+		}
+		elements.sharePasswordForm.reset();
+		setSharePasswordModalError(message || '');
+		openModal(elements.sharePasswordModal);
+		elements.sharePasswordInput.focus();
+
+		return new Promise((resolve) => {
+			function cleanup() {
+				elements.sharePasswordForm.removeEventListener('submit', onSubmit);
+				elements.sharePasswordCancel.removeEventListener('click', onCancel);
+			}
+
+			function finish(value) {
+				cleanup();
+				closeModal(elements.sharePasswordModal);
+				resolve(value);
+			}
+
+			function onSubmit(event) {
+				event.preventDefault();
+				const password = String(elements.sharePasswordInput.value || '');
+				if (!password) {
+					setSharePasswordModalError('Please enter the password.');
+					return;
+				}
+				finish(password);
+			}
+
+			function onCancel() {
+				finish(null);
+			}
+
+			elements.sharePasswordForm.addEventListener('submit', onSubmit);
+			elements.sharePasswordCancel.addEventListener('click', onCancel);
+		});
 	}
 
 	function setViewerDocumentType(fileDocument) {
@@ -78,7 +149,11 @@ export function createViewerSessionController({
 		elements.viewerTitle.textContent = defaultViewerTitle;
 		elements.viewerSubtitle.textContent = defaultViewerSubtitle;
 		elements.viewerFrame.src = 'about:blank';
-		window.history.replaceState(null, '', '/');
+		const currentStorageId = appState.currentStorageId || 'documents';
+		const storagePath = window.location.pathname.startsWith('/storage/')
+			? window.location.pathname
+			: `/storage/${encodeURIComponent(currentStorageId)}`;
+		window.history.replaceState(null, '', storagePath);
 		await reloadPage();
 		setStatus('Closed document.');
 	}
@@ -103,13 +178,38 @@ export function createViewerSessionController({
 		}
 
 		setStatus('Loading public share...');
+		let password = null;
+		const shareToken = encodeURIComponent(pathMatch[1]);
+		const language = encodeURIComponent(navigator.language || 'en-US');
 		try {
-			const payload = await requestJson(`/api/shares/${encodeURIComponent(pathMatch[1])}/launch?lang=${encodeURIComponent(navigator.language || 'en-US')}`);
-			submitLaunchPayload(payload);
-			setStatus(`Opened share ${payload.file.name}.`);
-			return true;
+			while (true) {
+				try {
+					const payload = await requestJson(`/api/shares/${shareToken}/launch?lang=${language}`, {
+						headers: password ? { 'X-Share-Password': password } : undefined
+					});
+					submitLaunchPayload(payload);
+					setStatus(`Opened share ${payload.file.name}.`);
+					return true;
+				} catch (error) {
+					const errorCode = getShareLaunchErrorCode(error);
+					if (errorCode === SHARE_PASSWORD_REQUIRED || errorCode === INVALID_SHARE_PASSWORD) {
+						password = await promptSharePassword(
+							errorCode === INVALID_SHARE_PASSWORD
+								? 'The password is incorrect. Please try again.'
+								: 'This public link is password-protected.'
+						);
+						if (!password) {
+							setStatus('Share opening cancelled.');
+							return true;
+						}
+						continue;
+					}
+					setStatus(error.message, true);
+					return true;
+				}
+			}
 		} catch (error) {
-			setStatus(error.message, true);
+			setStatus(error.message || 'Could not open public share.', true);
 			return true;
 		}
 	}

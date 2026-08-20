@@ -19,6 +19,8 @@ const {
 	updateRecycledEntry
 } = require('../lib/recycleStore');
 const { appendActivity, listActivity } = require('../lib/activityStore');
+const { createPublicShare, getPublicShareByToken } = require('../lib/shareStore');
+const { getContextStateRoot } = require('../lib/statePaths');
 const { loadUserState } = require('../lib/userStateStore');
 const { createVersionSnapshot, getVersionEntry } = require('../lib/versionStore');
 
@@ -35,8 +37,9 @@ test('recycle state is stored under the current document context root', async fu
 	process.env.WOPI_STATE_ROOT = path.join(tempRoot, 'state-root');
 
 	try {
-		assert.equal(getRecycledStatePath(sharedRoot), path.join(process.env.WOPI_STATE_ROOT, 'shared', 'recycled.json'));
-		assert.equal(getRecycledStatePath(personalRoot), path.join(process.env.WOPI_STATE_ROOT, 'users', 'user-7', 'recycled.json'));
+		assert.equal(getRecycledStatePath(sharedRoot), path.join(getContextStateRoot(sharedRoot), 'recycled.json'));
+		assert.equal(getRecycledStatePath(personalRoot), path.join(getContextStateRoot(personalRoot), 'recycled.json'));
+		assert.notEqual(getRecycledStatePath(sharedRoot), getRecycledStatePath(personalRoot));
 	} finally {
 		if (previousValue === undefined) {
 			delete process.env.WOPI_STATE_ROOT;
@@ -153,6 +156,31 @@ test('deleteRecycledEntry removes the recycled snapshot and preview artifacts', 
 	assert.deepEqual((await listActivity(tempRoot)).filter((entry) => entry.fileId === document.id), []);
 	assert.deepEqual((await loadUserState(tempRoot, 'user-1')).favorites, []);
 	assert.deepEqual((await loadUserState(tempRoot, 'user-1')).recent, []);
+});
+
+test('deleteRecycledEntry removes public shares for the deleted file', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-recycle-store-'));
+	await fs.writeFile(path.join(tempRoot, 'shared.odt'), 'content');
+	const [document] = await listDocuments(tempRoot);
+
+	const publicShare = await createPublicShare(tempRoot, {
+		resourceId: document.id,
+		storageId: 'documents',
+		permission: 'read',
+		createdBy: 'user-1',
+		ownerUserId: 'user-1'
+	});
+
+	await deleteDocument(tempRoot, document.id, {
+		actor: { id: 'user-1', name: 'User One' },
+		context: 'personal'
+	});
+	const recycledEntry = (await listRecycledEntries(tempRoot))[0];
+	assert.ok(recycledEntry);
+
+	const deleted = await deleteRecycledEntry(tempRoot, recycledEntry.id);
+	assert.equal(deleted, true);
+	await assert.rejects(() => getPublicShareByToken(tempRoot, publicShare.token), /Share link not found/);
 });
 
 test('restoreRecycledEntry recreates the document at the original path', async function() {
