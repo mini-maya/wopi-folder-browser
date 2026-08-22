@@ -9,8 +9,6 @@ export function createAuthController({
 	loadPage,
 	closeViewer
 }) {
-	let externalAclUserIds = new Set();
-
 	function renderAuthControls() {
 		const authenticated = Boolean(appState.auth?.authenticated);
 		const role = appState.auth?.user?.role || 'user';
@@ -19,8 +17,6 @@ export function createAuthController({
 		elements.logoutButton.classList.toggle('hidden', !authenticated);
 		elements.accountButton.classList.toggle('hidden', !authenticated);
 		elements.adminButton.classList.toggle('hidden', !(authenticated && role === 'admin'));
-		elements.myFilesButton.classList.add('hidden');
-		elements.sharedFilesButton.classList.add('hidden');
 		if (elements.recycleButton) {
 			elements.recycleButton.classList.toggle('hidden', !authenticated);
 			elements.recycleButton.disabled = !authenticated;
@@ -90,8 +86,6 @@ export function createAuthController({
 		await loadPage();
 	}
 
-	async function switchStorageContext() {}
-
 	async function submitAccountForm(event) {
 		event.preventDefault();
 		const currentPassword = elements.accountCurrentPassword.value;
@@ -115,6 +109,9 @@ export function createAuthController({
 
 	function renderAdminUsers() {
 		elements.adminUsersBody.innerHTML = '';
+		const availableMounts = Array.isArray(appState.adminMounts) && appState.adminMounts.length > 0
+			? appState.adminMounts
+			: (Array.isArray(appState.mounts) ? appState.mounts : []);
 		if (appState.adminUsers.length === 0) {
 			const row = document.createElement('tr');
 			const cell = document.createElement('td');
@@ -135,46 +132,75 @@ export function createAuthController({
 			statusCell.textContent = user.active ? 'active' : 'disabled';
 			const createdCell = document.createElement('td');
 			createdCell.textContent = formatDate(user.created_at);
-			const externalAccessCell = document.createElement('td');
-			const externalAccessLabel = document.createElement('label');
-			externalAccessLabel.className = 'checkbox-field';
-			const externalAccessToggle = document.createElement('input');
-			externalAccessToggle.type = 'checkbox';
-			externalAccessToggle.checked = externalAclUserIds.has(String(user.id));
-			externalAccessToggle.disabled = !user.active;
-			externalAccessToggle.title = user.active
-				? 'Allow this user to access external storage.'
-				: 'Enable the user account before granting external storage access.';
-			externalAccessToggle.addEventListener('change', async function() {
-				const nextAllowedUserIds = new Set(externalAclUserIds);
-				const userId = String(user.id);
-				if (externalAccessToggle.checked) {
-					nextAllowedUserIds.add(userId);
-				} else {
-					nextAllowedUserIds.delete(userId);
-				}
-				externalAccessToggle.disabled = true;
-				try {
-					const payload = await requestJson('/api/admin/external-acl', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ allowedUserIds: [...nextAllowedUserIds] })
+			const mountCell = document.createElement('td');
+			const mountList = document.createElement('div');
+			mountList.className = 'admin-mount-list';
+			const userMounts = new Set(Array.isArray(user.mounts) ? user.mounts.map((id) => String(id)) : []);
+			if (availableMounts.length === 0) {
+				mountList.textContent = 'No mounts available.';
+			} else {
+				for (const mount of availableMounts) {
+					const label = document.createElement('label');
+					label.className = 'checkbox-field';
+					const checkbox = document.createElement('input');
+					const mountId = String(mount.id);
+					checkbox.type = 'checkbox';
+					checkbox.checked = userMounts.has(mountId);
+					checkbox.disabled = !user.active;
+					checkbox.title = user.active
+						? `Grant access to mount ${mount.name}.`
+						: 'Enable the user account before granting mount access.';
+					checkbox.addEventListener('change', async function() {
+						const currentMounts = new Set(Array.isArray(user.mounts) ? user.mounts.map((id) => String(id)) : []);
+						const nextMounts = new Set(currentMounts);
+						if (checkbox.checked) {
+							nextMounts.add(mountId);
+						} else {
+							nextMounts.delete(mountId);
+						}
+						checkbox.disabled = true;
+						try {
+							const payload = await requestJson(`/api/admin/users/${encodeURIComponent(user.id)}/mounts`, {
+								method: 'PUT',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({ mounts: [...nextMounts] })
+							});
+							user.mounts = Array.isArray(payload?.mounts) ? payload.mounts : [...nextMounts];
+							if (appState.auth?.user?.id === user.id) {
+								appState.auth.user.mounts = user.mounts.slice();
+								const currentPathMount = window.location.pathname.match(/^\/mount\/([^/]+)/)?.[1];
+								const currentUrlMountId = currentPathMount ? decodeURIComponent(currentPathMount) : null;
+								const stillHasCurrentMount = !currentUrlMountId || user.mounts.some((id) => String(id) === String(currentUrlMountId));
+								if (!stillHasCurrentMount) {
+									const fallbackMount = Array.isArray(appState.mounts) && appState.mounts.length > 0
+										? appState.mounts.find((mount) => user.mounts.some((id) => String(id) === String(mount.id)))
+										: null;
+									const fallbackMountId = fallbackMount?.id || null;
+									appState.currentMountId = fallbackMountId || 'documents';
+									if (fallbackMountId) {
+										window.history.replaceState({}, '', `/mount/${encodeURIComponent(fallbackMountId)}`);
+									} else {
+										window.history.replaceState({}, '', '/');
+									}
+									await loadPage();
+									return;
+								}
+							}
+							renderAdminUsers();
+							setStatus(`Mount permissions for "${user.username}" updated.`);
+						} catch (error) {
+							checkbox.checked = currentMounts.has(mountId);
+							setStatus(error.message, true);
+						} finally {
+							checkbox.disabled = !user.active;
+						}
 					});
-					const persistedUserIds = Array.isArray(payload?.allowedUserIds)
-						? payload.allowedUserIds.map((id) => String(id))
-						: [];
-					externalAclUserIds = new Set(persistedUserIds);
-					externalAccessToggle.checked = externalAclUserIds.has(userId);
-					setStatus(`External storage access for "${user.username}" updated.`);
-				} catch (error) {
-					externalAccessToggle.checked = externalAclUserIds.has(userId);
-					setStatus(error.message, true);
-				} finally {
-					externalAccessToggle.disabled = !user.active;
+					label.appendChild(checkbox);
+					label.appendChild(document.createTextNode(` ${mount.name}`));
+					mountList.appendChild(label);
 				}
-			});
-			externalAccessLabel.appendChild(externalAccessToggle);
-			externalAccessCell.appendChild(externalAccessLabel);
+			}
+			mountCell.appendChild(mountList);
 			const actionsCell = document.createElement('td');
 			const actionContainer = document.createElement('div');
 			actionContainer.className = 'admin-user-actions';
@@ -232,7 +258,7 @@ export function createAuthController({
 
 			actionContainer.append(toggleButton, resetButton, deleteButton);
 			actionsCell.appendChild(actionContainer);
-			row.append(usernameCell, roleCell, statusCell, createdCell, externalAccessCell, actionsCell);
+			row.append(usernameCell, roleCell, statusCell, createdCell, mountCell, actionsCell);
 			elements.adminUsersBody.appendChild(row);
 		}
 	}
@@ -243,10 +269,10 @@ export function createAuthController({
 		renderAdminUsers();
 	}
 
-	async function loadExternalAcl() {
-		const payload = await requestJson('/api/admin/external-acl');
-		const allowedUserIds = Array.isArray(payload?.allowedUserIds) ? payload.allowedUserIds : [];
-		externalAclUserIds = new Set(allowedUserIds.map((id) => String(id)));
+	async function loadAdminMounts() {
+		const payload = await requestJson('/api/admin/mounts');
+		appState.adminMounts = Array.isArray(payload?.mounts) ? payload.mounts : [];
+		renderAdminUsers();
 	}
 
 	async function openAdminUserManagement() {
@@ -255,7 +281,10 @@ export function createAuthController({
 		elements.adminCreateUserForm.reset();
 		elements.adminCreateGeneratePassword.checked = true;
 		elements.adminCreatePassword.disabled = true;
-		await Promise.all([loadAdminUsers(), loadExternalAcl()]);
+		await Promise.all([
+			loadAdminUsers(),
+			loadAdminMounts()
+		]);
 		renderAdminUsers();
 		openModal(elements.adminModal);
 	}
@@ -291,7 +320,6 @@ export function createAuthController({
 		elements.adminCreateUserForm.reset();
 		elements.adminCreateGeneratePassword.checked = true;
 		elements.adminCreatePassword.disabled = true;
-		await loadExternalAcl();
 		await loadAdminUsers();
 	}
 
@@ -301,7 +329,6 @@ export function createAuthController({
 		openLoginModal,
 		submitLoginForm,
 		logoutCurrentUser,
-		switchStorageContext,
 		openAccountModal,
 		submitAccountForm,
 		openAdminUserManagement,

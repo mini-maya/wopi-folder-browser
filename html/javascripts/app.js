@@ -37,12 +37,9 @@ const elements = {
 	bulkActionsMenuButton: document.querySelector('#bulk-menu-button'),
 	viewerFrame: document.querySelector('#collabora-online-viewer'),
 	refreshButton: document.querySelector('#refresh-button'),
-	storageSelect: document.querySelector('#storage-select'),
-	recycleButton: document.querySelector('#recycle-button'),
+	mountSelector: document.querySelector('#mount-selector'),
 	newMenuButton: document.querySelector('#new-menu-button'),
 	uploadButton: document.querySelector('#upload-button'),
-	myFilesButton: document.querySelector('#my-files-button'),
-	sharedFilesButton: document.querySelector('#shared-files-button'),
 	adminButton: document.querySelector('#admin-button'),
 	accountButton: document.querySelector('#account-button'),
 	loginButton: document.querySelector('#login-button'),
@@ -113,8 +110,8 @@ const appState = {
 	documents: [],
 	visibleDocuments: [],
 	config: null,
-	storages: [],
-	currentStorageId: 'documents',
+	mounts: [],
+	currentMountId: 'documents',
 	themeMode: 'auto',
 	currentView: 'files',
 	selectedFileIds: new Set(),
@@ -139,10 +136,10 @@ const appState = {
 	auth: {
 		authenticated: false,
 		user: null,
-		storageId: 'documents'
+		mountId: 'documents'
 	},
 	adminUsers: [],
-	recycleEntries: [],
+	adminMounts: [],
 	applyConflictToAll: false,
 	integrationPendingData: null,
 	activeDetailTab: 'share',
@@ -176,47 +173,68 @@ function setStatus(message, isError = false) {
 	elements.statusMessage.classList.toggle('error', isError);
 }
 
-function getStorageIdFromLocation() {
-	const match = window.location.pathname.match(/^\/storage\/([^/]+)/);
+function getMountIdFromLocation() {
+	const match = window.location.pathname.match(/^\/mount\/([^/]+)/);
 	return match?.[1] ? decodeURIComponent(match[1]) : 'documents';
 }
 
-function updateStoragePath(storageId) {
-	const encodedStorageId = encodeURIComponent(storageId || 'documents');
-	const nextPath = `/storage/${encodedStorageId}`;
+function updateMountPath(mountId) {
+	const encodedMountId = encodeURIComponent(mountId || 'documents');
+	const nextPath = `/mount/${encodedMountId}`;
 	if (window.location.pathname !== nextPath) {
 		window.history.replaceState({}, '', nextPath);
 	}
 }
 
-function renderStorageSelector() {
-	if (!elements.storageSelect) {
+function renderMountSelector() {
+	if (!elements.mountSelector) {
 		return;
 	}
-	const storages = Array.isArray(appState.storages) ? appState.storages : [];
-	elements.storageSelect.innerHTML = '';
-	for (const storage of storages) {
-		const option = document.createElement('option');
-		option.value = storage.id;
-		option.textContent = storage.available === false
-			? `${storage.name} (Unavailable)`
-			: `${storage.name}${storage.readOnly ? ' (Read-only)' : ''}`;
-		option.disabled = storage.available === false || storage.enabled === false;
-		elements.storageSelect.appendChild(option);
+	const mounts = Array.isArray(appState.mounts) ? appState.mounts : [];
+	elements.mountSelector.innerHTML = '';
+	if (mounts.length === 0) {
+		const empty = document.createElement('span');
+		empty.className = 'theme-label';
+		empty.textContent = appState.auth?.authenticated ? 'No mounts assigned' : 'No mounts available';
+		elements.mountSelector.appendChild(empty);
+		return;
 	}
-	if (!storages.some((storage) => storage.id === appState.currentStorageId && storage.available !== false && storage.enabled !== false)) {
-		const fallback = storages.find((storage) => storage.available !== false && storage.enabled !== false);
+	for (const mount of mounts) {
+		const button = document.createElement('button');
+		button.type = 'button';
+		button.className = 'secondary mount-selector-button';
+		button.setAttribute('role', 'tab');
+		button.setAttribute('aria-pressed', String(mount.id === appState.currentMountId));
+		button.classList.toggle('is-active', mount.id === appState.currentMountId);
+		button.disabled = mount.available === false || mount.enabled === false;
+		button.textContent = mount.available === false
+			? `${mount.name} (Unavailable)`
+			: `${mount.name}${mount.readOnly ? ' (Read-only)' : ''}`;
+		button.addEventListener('click', function() {
+			if (button.disabled) {
+				return;
+			}
+			if (appState.currentMountId === mount.id) {
+				return;
+			}
+			appState.currentMountId = mount.id;
+			updateMountPath(mount.id);
+			loadPage();
+		});
+		elements.mountSelector.appendChild(button);
+	}
+	if (!mounts.some((mount) => mount.id === appState.currentMountId && mount.available !== false && mount.enabled !== false)) {
+		const fallback = mounts.find((mount) => mount.available !== false && mount.enabled !== false);
 		if (fallback) {
-			appState.currentStorageId = fallback.id;
+			appState.currentMountId = fallback.id;
 		}
 	}
-	elements.storageSelect.value = appState.currentStorageId;
 	updateWriteActionButtons();
 }
 
 function updateWriteActionButtons() {
-	const currentStorage = appState.storages?.find((s) => s.id === appState.currentStorageId);
-	const isReadOnly = currentStorage?.readOnly === true;
+	const currentMount = appState.mounts?.find((mount) => mount.id === appState.currentMountId);
+	const isReadOnly = currentMount?.readOnly === true;
 	const isUnauthenticated = !appState.auth?.authenticated;
 
 	if (elements.newMenuButton) {
@@ -227,28 +245,8 @@ function updateWriteActionButtons() {
 	}
 }
 
-function syncRecycleButtonState() {
-	if (!elements.recycleButton) {
-		return;
-	}
-	const recycleCount = Array.isArray(appState.recycleEntries) ? appState.recycleEntries.length : 0;
-	const recycleCountElement = elements.recycleButton.querySelector('[data-recycle-count]');
-	if (recycleCountElement) {
-		recycleCountElement.textContent = String(recycleCount);
-		recycleCountElement.hidden = recycleCount === 0;
-	}
-	elements.recycleButton.classList.toggle('is-active', appState.currentView === 'recycle');
-	elements.recycleButton.setAttribute('aria-pressed', appState.currentView === 'recycle' ? 'true' : 'false');
-	elements.recycleButton.setAttribute('aria-label', recycleCount === 0 ? 'Recycle Bin' : `Recycle Bin, ${recycleCount} items`);
-	elements.recycleButton.title = recycleCount === 0 ? 'Recycle Bin' : `Recycle Bin (${recycleCount})`;
-}
-
 let fileActionsController = null;
 let contextMenuController = null;
-
-function getRecycleEntryById(entryId) {
-	return appState.recycleEntries.find((entry) => entry.id === entryId) || null;
-}
 
 async function handleFileAction(action, fileId, mode) {
 	if (!fileActionsController) {
@@ -262,184 +260,6 @@ async function createShare(fileId) {
 		return;
 	}
 	await fileActionsController.createShare(fileId);
-}
-
-async function deleteDocument(fileId) {
-	if (!fileActionsController) {
-		return;
-	}
-	await fileActionsController.deleteDocument(fileId);
-}
-
-async function openRecycleEntryDetails(entryId) {
-	const entry = getRecycleEntryById(entryId);
-	if (!entry) {
-		return;
-	}
-	const fallbackPreviewSrc = buildFilePreviewSvg({ mimeType: entry.mimeType || '' });
-	elements.detailsPanel.classList.remove('hidden');
-	elements.detailsPanelContent.innerHTML = `
-		<div class="details-card">
-			<div class="details-preview">
-				<img src="${fallbackPreviewSrc}" alt="${escapeHtml(entry.originalName || 'recycled file')} preview">
-			</div>
-			<div class="details-header">
-				<h3>${escapeHtml(entry.originalName || 'Recovered file')}</h3>
-			</div>
-			<div class="detail-meta">
-				<div class="detail-meta-row"><span>Original path</span><strong>${escapeHtml(entry.originalPath || '')}</strong></div>
-				<div class="detail-meta-row"><span>Deleted at</span><strong>${formatDate(entry.deletedAt)}</strong></div>
-				<div class="detail-meta-row"><span>Size</span><strong>${entry.versionSize != null ? formatBytes(entry.versionSize) : '—'}</strong></div>
-			</div>
-			<div class="details-actions">
-				<button type="button" class="secondary" data-recycle-action="restore" data-entry-id="${entry.id}">Restore</button>
-				<button type="button" class="danger" data-recycle-action="delete-finally" data-entry-id="${entry.id}">Delete finally</button>
-			</div>
-		</div>
-	`;
-	const previewImage = elements.detailsPanelContent.querySelector('.details-preview img');
-	if (previewImage && entry.thumbnailUrl) {
-		previewImage.addEventListener('error', function handleRecyclePreviewError() {
-			previewImage.src = fallbackPreviewSrc;
-			previewImage.removeEventListener('error', handleRecyclePreviewError);
-		});
-		previewImage.src = entry.thumbnailUrl;
-	}
-	for (const button of elements.detailsPanelContent.querySelectorAll('[data-recycle-action]')) {
-		button.addEventListener('click', async function() {
-			await handleRecycleAction(button.dataset.recycleAction, button.dataset.entryId);
-		});
-	}
-}
-
-function closeActiveDetailsPanel() {
-	appState.activeDetailFileId = null;
-	elements.detailsPanel.classList.add('hidden');
-}
-
-async function handleRecycleAction(action, entryId) {
-	const entry = getRecycleEntryById(entryId);
-	if (!entry) {
-		return;
-	}
-	if (action === 'details') {
-		await openRecycleEntryDetails(entryId);
-		return;
-	}
-	if (action === 'restore') {
-		try {
-			await requestJson(`/api/recycle/${encodeURIComponent(entryId)}/restore`, { method: 'POST' });
-			await loadPage();
-			closeActiveDetailsPanel();
-			setStatus('Restored successfully.');
-		} catch (error) {
-			if (error?.payload?.error === 'FILE_CONFLICT' && fileActionsController?.showConflictDialog) {
-				const resolution = await fileActionsController.showConflictDialog(error.payload, 'Restore');
-				if (!resolution) {
-					return;
-				}
-				try {
-					const retryResult = await requestJson(`/api/recycle/${encodeURIComponent(entryId)}/restore`, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ conflictResolution: resolution })
-					});
-					await loadPage();
-					if (!retryResult?.skipped) {
-						closeActiveDetailsPanel();
-					}
-					setStatus(retryResult?.skipped ? 'Restore skipped.' : 'Restored successfully.');
-				} catch (retryError) {
-					setStatus(retryError.message, true);
-				}
-				return;
-			}
-			setStatus(error.message, true);
-		}
-		return;
-	}
-	if (action === 'delete-finally') {
-		if (!window.confirm('Delete this document permanently?')) {
-			return;
-		}
-		try {
-			await requestJson(`/api/recycle/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
-			await loadPage();
-			closeActiveDetailsPanel();
-			setStatus('Deleted permanently.');
-		} catch (error) {
-			setStatus(error.message, true);
-		}
-	}
-}
-
-async function handleRecycleBulkAction(action) {
-	const selectedIds = Array.from(appState.selectedFileIds);
-	if (!selectedIds.length) {
-		return;
-	}
-	const count = selectedIds.length;
-	const label = count === 1 ? '1 item' : `${count} items`;
-	if (action === 'restore') {
-		try {
-			let skippedCount = 0;
-			for (const id of selectedIds) {
-				try {
-					const result = await requestJson(`/api/recycle/${encodeURIComponent(id)}/restore`, { method: 'POST' });
-					if (result?.skipped) {
-						skippedCount++;
-					}
-				} catch (error) {
-					if (error?.payload?.error === 'FILE_CONFLICT' && fileActionsController?.showConflictDialog) {
-						const resolution = await fileActionsController.showConflictDialog(error.payload, 'Restore');
-						if (!resolution) {
-							skippedCount++;
-							continue;
-						}
-						const retryResult = await requestJson(`/api/recycle/${encodeURIComponent(id)}/restore`, {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({ conflictResolution: resolution })
-						});
-						if (retryResult?.skipped) {
-							skippedCount++;
-						}
-					} else {
-						setStatus(error.message, true);
-						return;
-					}
-				}
-			}
-			appState.selectedFileIds.clear();
-			await loadPage();
-			setStatus(skippedCount > 0 ? `Restored ${count - skippedCount} of ${label}.` : `Restored ${label}.`);
-		} catch (error) {
-			setStatus(error.message, true);
-		}
-		return;
-	}
-	if (action === 'delete-finally') {
-		if (!window.confirm(`Permanently delete ${label}?`)) {
-			return;
-		}
-		try {
-			for (const id of selectedIds) {
-				await requestJson(`/api/recycle/${encodeURIComponent(id)}`, { method: 'DELETE' });
-			}
-			appState.selectedFileIds.clear();
-			await loadPage();
-			setStatus(`Deleted ${label} permanently.`);
-		} catch (error) {
-			setStatus(error.message, true);
-		}
-	}
-}
-
-async function saveAsDocument(fileId) {
-	if (!fileActionsController) {
-		return;
-	}
-	await fileActionsController.saveAsDocument(fileId);
 }
 
 async function showContextMenu(fileId, button) {
@@ -513,7 +333,7 @@ const authController = createAuthController({
 	},
 	clearDocuments: function() {
 		appState.documents = [];
-		appState.storages = [];
+		appState.mounts = [];
 		appState.auth = null;
 		documentListController.renderCurrentDocumentList();
 	},
@@ -541,8 +361,7 @@ const documentListController = createDocumentListController({
 	formatBytes: formatBytes,
 	onCloseOpenContextMenu: closeOpenContextMenu,
 	onShowContextMenu: showContextMenu,
-	onHandleFileAction: handleFileAction,
-	onHandleRecycleAction: handleRecycleAction
+	onHandleFileAction: handleFileAction
 });
 
 const detailsPanelController = createDetailsPanelController({
@@ -563,12 +382,9 @@ const detailsPanelController = createDetailsPanelController({
 	onOpenFolderTargetDialog: async function(action, fileIds) {
 		await folderTargetController.openFolderTargetDialog(action, fileIds);
 	},
-	onDeleteDocument: deleteDocument,
-	onHandleRecycleAction: handleRecycleAction,
 	onLoadPage: async function() {
 		await loadPage();
 	},
-	onSaveAsDocument: saveAsDocument,
 	onViewerOpenDocument: async function(fileId, mode) {
 		await viewerSessionController.openDocument(fileId, mode);
 	},
@@ -608,18 +424,6 @@ const folderTargetController = createFolderTargetController({
 	onSetStatus: setStatus,
 	onLoadPage: async function() {
 		await loadPage();
-	},
-	onMoveDocuments: async function(documents, targetDirectory) {
-		await fileActionsController.moveDocuments(documents, targetDirectory);
-	},
-	onCopyDocuments: async function(documents, targetDirectory) {
-		await fileActionsController.copyDocuments(documents, targetDirectory);
-	},
-	onMoveDocument: async function(fileId, targetNameOverride, targetDirectoryOverride) {
-		await fileActionsController.moveDocument(fileId, targetNameOverride, targetDirectoryOverride);
-	},
-	onCopyDocument: async function(fileId, targetNameOverride, targetDirectoryOverride) {
-		await fileActionsController.copyDocument(fileId, targetNameOverride, targetDirectoryOverride);
 	},
 	onRenderVersionList: async function(fileId) {
 		await detailsPanelController.renderVersionList(fileId);
@@ -668,8 +472,6 @@ contextMenuController = createContextMenuController({
 	},
 	isFolderEntry: isFolderEntry,
 	onHandleFileAction: handleFileAction,
-	onHandleRecycleAction: handleRecycleAction,
-	onHandleRecycleBulkAction: handleRecycleBulkAction,
 	onOpenDetailsPanel: function(fileId) {
 		detailsPanelController.openDetailsPanel(fileId);
 	},
@@ -685,8 +487,6 @@ contextMenuController = createContextMenuController({
 	onOpenFolderTargetDialog: async function(action, fileIds) {
 		await folderTargetController.openFolderTargetDialog(action, fileIds);
 	},
-	onSaveAsDocument: saveAsDocument,
-	onDeleteDocument: deleteDocument,
 	onLoadPage: async function() {
 		await loadPage();
 	},
@@ -701,18 +501,6 @@ function getDocumentById(fileId) {
 
 function applySearchFilter() {
 	documentListController.renderCurrentDocumentList();
-}
-
-async function toggleRecycleView() {
-	if (!appState.auth?.authenticated) {
-		appState.currentView = 'files';
-		documentListController.renderCurrentDocumentList();
-		syncRecycleButtonState();
-		return;
-	}
-	appState.currentView = appState.currentView === 'recycle' ? 'files' : 'recycle';
-	clearSelectionAndDetailState(appState);
-	await loadPage();
 }
 
 function getMissingDocuments() {
@@ -743,7 +531,7 @@ function openMissingEntriesModal(missingEntries) {
 		return;
 	}
 	if (elements.missingEntriesSummary) {
-		elements.missingEntriesSummary.textContent = `${count} missing entr${count === 1 ? 'y' : 'ies'} found in the current storage context.`;
+		elements.missingEntriesSummary.textContent = `${count} missing entr${count === 1 ? 'y' : 'ies'} found in the current mount context.`;
 	}
 	if (elements.missingEntriesList) {
 		const previewEntries = entries.slice(0, 10);
@@ -800,28 +588,44 @@ async function handleRefreshClick() {
 async function loadPage() {
 	setStatus('Loading documents...');
 	try {
-		const [authState, config, storages] = await Promise.all([
-			requestJson('/api/auth/me'),
-			requestJson('/api/config'),
-			requestJson('/api/storages')
-		]);
-
-		const selectedStorageId = getStorageIdFromLocation();
-		appState.storages = Array.isArray(storages) ? storages : [];
-		appState.currentStorageId = selectedStorageId || config.storageId || 'documents';
+		const authState = await requestJson('/api/auth/me');
+		const config = await requestJson('/api/config');
 		appState.auth = authState;
 		appState.config = config;
 
-		const hasAccessibleStorage = appState.storages.some((s) => s.available !== false && s.enabled !== false);
-		if (!hasAccessibleStorage && !authState.authenticated) {
+		if (!authState.authenticated) {
+			appState.mounts = [];
+			documentListController.renderEmptyState();
 			authController.renderAuthControls();
 			authController.openLoginModal();
 			setStatus('');
 			return;
 		}
 
-		renderStorageSelector();
-		updateStoragePath(appState.currentStorageId);
+		const mounts = await requestJson('/api/mounts');
+		const selectedMountId = getMountIdFromLocation();
+		appState.mounts = Array.isArray(mounts) ? mounts : [];
+		appState.currentMountId = selectedMountId || config.mountId || 'documents';
+
+		const accessibleMounts = appState.mounts.filter((mount) => mount.available !== false && mount.enabled !== false);
+		const hasAccessibleMount = accessibleMounts.length > 0;
+		const selectedMount = appState.mounts.find((mount) => mount.id === appState.currentMountId && mount.available !== false && mount.enabled !== false) || null;
+		if (!selectedMount && hasAccessibleMount) {
+			const fallbackMount = accessibleMounts[0];
+			appState.currentMountId = fallbackMount.id;
+			updateMountPath(fallbackMount.id);
+			if (selectedMountId) {
+				setStatus('You do not have access to that mount. Switched to an available mount.', true);
+			}
+		}
+
+		renderMountSelector();
+		if (authState.authenticated && !hasAccessibleMount) {
+			documentListController.renderEmptyState();
+			authController.renderAuthControls();
+			setStatus('No mounts are assigned to your account.', true);
+			return;
+		}
 
 		if (!authState.authenticated) {
 			appState.currentView = 'files';
@@ -838,25 +642,19 @@ async function loadPage() {
 			}
 			filesResponse = { documents: [] };
 		}
-		const recycleResponse = authState.authenticated
-			? await requestJson('/api/recycle')
-			: { entries: [] };
 		const loadedDocuments = Array.isArray(filesResponse.documents) ? filesResponse.documents : [];
-		const loadedRecycleEntries = Array.isArray(recycleResponse.entries) ? recycleResponse.entries : [];
 		appState.documents = loadedDocuments;
-		appState.recycleEntries = loadedRecycleEntries;
 		detailsPanelController.syncDetailThumbnailCacheWithDocuments();
 		authController.applyPasswordPolicyToForms(config.passwordMinLength);
 		authController.renderAuthControls();
 		elements.aboutVersion.textContent = config.appVersion || 'Unknown';
-		elements.documentRoot.textContent = `${config.storageName || appState.currentStorageId}${config.storageReadOnly ? ' (read-only)' : ''}`;
+		elements.documentRoot.textContent = `${config.mountName || appState.currentMountId}${config.mountAvailable === false ? ' (unavailable)' : ''}`;
 		elements.appBaseUrl.textContent = config.appBaseUrl;
 		elements.collaboraUrl.textContent = config.collaboraPublicUrl;
 		documentListController.renderCurrentDocumentList();
-		syncRecycleButtonState();
-		const count = appState.currentView === 'recycle' ? appState.recycleEntries.length : appState.documents.length;
-		if (config.storageAvailable === false) {
-			setStatus(`${config.storageName || appState.currentStorageId} is currently unavailable.`, true);
+		const count = appState.documents.length;
+		if (config.mountAvailable === false) {
+			setStatus(`${config.mountName || appState.currentMountId} is currently unavailable.`, true);
 		} else {
 			setStatus(`Loaded ${count} entr${count === 1 ? 'y' : 'ies'}.`);
 		}
@@ -941,16 +739,6 @@ const appBootstrap = createAppBootstrap({
 	toggleNewDocumentMenu: toggleNewDocumentMenu,
 	toggleBulkActionsMenu: toggleBulkActionsMenu,
 	setStatus: setStatus
-});
-elements.recycleButton?.addEventListener('click', toggleRecycleView);
-elements.storageSelect?.addEventListener('change', function(event) {
-	const nextStorageId = String(event.target.value || '').trim();
-	if (!nextStorageId) {
-		return;
-	}
-	appState.currentStorageId = nextStorageId;
-	updateStoragePath(nextStorageId);
-	loadPage();
 });
 elements.aboutButton.addEventListener('click', openAboutDialog);
 elements.aboutCancel.addEventListener('click', closeAboutDialog);

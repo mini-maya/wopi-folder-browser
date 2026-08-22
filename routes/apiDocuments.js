@@ -11,20 +11,16 @@ const { createAccessToken } = require('../lib/accessToken');
 const { appendActivity, listActivity, removeActivityEntriesForFile } = require('../lib/activityStore');
 const { getActionUrl, getSupportedFormats } = require('../lib/discovery');
 const {
-  copyDocument,
   createDocumentByType,
   createFolder,
-  deleteDocument,
   getDocumentById,
   listDocuments,
   pruneMissingDocumentEntries,
-  renameOrMoveDocument,
   SUPPORTED_MIME_TYPES,
   uploadDocuments
 } = require('../lib/documentStore');
 const { createHttpError } = require('../lib/errors');
 const { createDocumentsZip, createFolderZip } = require('../lib/folderZip');
-const { deleteRecycledEntry, listRecycledEntries, restoreRecycledEntry } = require('../lib/recycleStore');
 const {
   createPublicShare,
   consumePublicShareAccess,
@@ -36,7 +32,6 @@ const {
   validatePublicShareAccess,
   listPublicSharesByFile
 } = require('../lib/shareStore');
-const { getSharedStorageRoot, getUserStorageRoot } = require('../lib/storageContext');
 const { createDocumentFromTemplate, listTemplates } = require('../lib/templateStore');
 const { renderOfficeThumbnail } = require('../lib/thumbnailService');
 const { getRequestUser } = require('../lib/userContext');
@@ -48,24 +43,16 @@ const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 function getDocumentRoot(req) {
-  if (req.storage?.id === 'shared') {
-    return getSharedStorageRoot(config);
-  }
-
-  if (req.storage?.id === 'documents' || !req.storage) {
-    const userId = req.auth?.user?.id || req.session?.userId;
-    if (userId) {
-      return getUserStorageRoot(config, userId);
-    }
-  }
-
-  return req.storage?.root || config.documentRoot;
+	if (req.mount) {
+		return req.mount.root;
+	}
+	return req.mount?.root || config.mountRoot;
 }
 
-function ensureWritableStorage(req) {
-  if (req.storage?.readOnly === true) {
-    throw createHttpError(403, 'Selected storage is read-only.');
-  }
+function ensureWritableMount(req) {
+	if (req.mount?.readOnly === true) {
+		throw createHttpError(403, 'Selected mount is read-only.');
+	}
 }
 
 function logThumbnailDebug(message, details) {
@@ -85,7 +72,6 @@ const FEATURE_MATRIX = [
   { feature: 'Open/Edit/View mode mapping', category: 3, note: 'Mode chosen from permission and launch context.' },
   { feature: 'New document/spreadsheet/presentation', category: 3, note: 'Implemented as API + browser action.' },
   { feature: 'Templates (personal/group/global/admin)', category: 3, note: 'Template roots supported via filesystem folders.' },
-  { feature: 'Rename/Move/Copy/Delete', category: 3, note: 'Implemented with stable file IDs in file registry.' },
   { feature: 'Version history (Open/Restore)', category: 3, note: 'Snapshot-based file versions in local state store.' },
   { feature: 'Favorites/Recent', category: 3, note: 'User-scoped state persisted per user id.' },
   { feature: 'Public share links (view/edit)', category: 3, note: 'Public share token with server-side validation on WOPI calls.' },
@@ -105,22 +91,6 @@ function appendQueryParameter(url, key, value) {
 
 function normalizeEditorMode(value) {
   return value === 'view' ? 'view' : 'edit';
-}
-
-function getDocumentActivityType(beforeDocument, afterDocument) {
-  if (!beforeDocument || !afterDocument) {
-    return 'move';
-  }
-  const beforeDirectory = path.posix.dirname(beforeDocument.relativePath || '');
-  const afterDirectory = path.posix.dirname(afterDocument.relativePath || '');
-  const beforeName = path.posix.basename(beforeDocument.relativePath || '');
-  const afterName = path.posix.basename(afterDocument.relativePath || '');
-
-  if (beforeDirectory === afterDirectory && beforeName !== afterName) {
-    return 'rename';
-  }
-
-  return 'move';
 }
 
 function getDocumentTypeName(type) {
@@ -189,7 +159,7 @@ async function buildLaunchPayload(req, document, mode, options = {}) {
       shareOwnerUserId: options.shareOwnerUserId || null,
       sharePermission: options.sharePermission || null,
       shareDownloadEnabled: options.shareDownloadEnabled !== false,
-      storageId: req.storage?.id || 'documents'
+      mountId: req.mountId || options.mountId || null
     }
   });
 
@@ -213,16 +183,16 @@ async function buildLaunchPayload(req, document, mode, options = {}) {
 }
 
 router.get('/config', function(req, res) {
-  const storageManager = req.app.locals.storageManager;
-  const requestedStorageId = req.requestedStorageId || req.storage?.id || 'documents';
-  const requestedStorage = storageManager.list().find((entry) => entry.id === requestedStorageId) || null;
+  const mountRegistry = req.app.locals.mountRegistry;
+  const currentMount = req.mount || null;
+  const mountId = req.mountId || null;
+  const mount = currentMount || (mountId ? mountRegistry.get(mountId) : null);
+
   res.json({
     appVersion: packageJson.version,
-    storageId: requestedStorageId,
-    storageName: requestedStorage?.name || req.storage?.name || 'Documents',
-    storageReadOnly: requestedStorage?.readOnly === true,
-    storageAvailable: requestedStorageId === (req.storage?.id || 'documents') && requestedStorage?.available !== false,
-    sharedStorageMode: String(config.sharedStorageMode || 'disabled').trim().toLowerCase(),
+    mountId: mountId,
+    mountName: mount?.name || 'Documents',
+    mountAvailable: Boolean(mount?.available),
     templateRoot: config.templateRoot,
     appBaseUrl: config.getPublicAppBaseUrl(req),
     collaboraPublicUrl: config.collaboraPublicUrl,
@@ -338,7 +308,7 @@ router.get('/files/:fileId/thumbnail', async function(req, res, next) {
       requestTimeoutMs: config.thumbnailRequestTimeoutMs,
       userId: user.id,
       userName: user.displayName,
-      storageId: req.storage?.id || 'documents'
+      mountId: req.mountId || null
     });
     logThumbnailDebug('thumbnail request completed', {
       fileId: payload.fileId,
@@ -356,20 +326,19 @@ router.get('/files/:fileId/thumbnail', async function(req, res, next) {
 });
 
 async function resolveThumbnailRequest(req, res, next) {
-  try {
-    const absolutePath = await resolveThumbnailAbsolutePath(getDocumentRoot(req), req.params.fileId, req.params.version);
-    if (!absolutePath) {
-      throw createHttpError(404, 'Thumbnail not found.');
-    }
-    res.type('image/png');
-    res.sendFile(absolutePath);
-  } catch (error) {
-    next(error);
-  }
+	try {
+		const absolutePath = await resolveThumbnailAbsolutePath(getDocumentRoot(req), req.params.fileId, req.params.version);
+		if (!absolutePath) {
+			throw createHttpError(404, 'Thumbnail not found.');
+		}
+		res.type('image/png');
+		res.sendFile(absolutePath);
+	} catch (error) {
+		next(error);
+	}
 }
 
 router.get('/thumbnails/:fileId/:version', resolveThumbnailRequest);
-router.get('/storage/:storageId/thumbnails/:fileId/:version', resolveThumbnailRequest);
 
 router.get('/files/:fileId/download', async function(req, res, next) {
   try {
@@ -433,7 +402,7 @@ router.get('/files/:fileId/launch', async function(req, res, next) {
 
 router.post('/files', async function(req, res, next) {
   try {
-    ensureWritableStorage(req);
+    ensureWritableMount(req);
     if (!config.allowDocumentCreation) {
       throw createHttpError(403, 'Document creation is disabled.');
     }
@@ -480,7 +449,7 @@ router.post('/files', async function(req, res, next) {
 
 router.post('/folders', async function(req, res, next) {
   try {
-    ensureWritableStorage(req);
+    ensureWritableMount(req);
     if (!config.allowDocumentCreation) {
       throw createHttpError(403, 'Folder creation is disabled.');
     }
@@ -505,7 +474,7 @@ router.post('/folders', async function(req, res, next) {
 
 router.post('/uploads', upload.array('files'), async function(req, res, next) {
   try {
-    ensureWritableStorage(req);
+    ensureWritableMount(req);
     if (!config.allowDocumentCreation) {
       throw createHttpError(403, 'Uploads are disabled.');
     }
@@ -554,200 +523,6 @@ router.post('/uploads', upload.array('files'), async function(req, res, next) {
   }
 });
 
-router.post('/files/:fileId/move', async function(req, res, next) {
-  try {
-    ensureWritableStorage(req);
-    const user = getRequestUser(req);
-    const previousDocument = await getDocumentById(getDocumentRoot(req), req.params.fileId);
-    const result = await renameOrMoveDocument(getDocumentRoot(req), req.params.fileId, {
-      targetDirectory: req.body.targetDirectory,
-      targetName: req.body.targetName,
-      conflictResolution: req.body.conflictResolution,
-      directoryConflictResolution: req.body.directoryConflictResolution,
-      directoryConflictResolutions: req.body.directoryConflictResolutions,
-      fileConflictResolution: req.body.fileConflictResolution,
-      fileConflictResolutions: req.body.fileConflictResolutions,
-      operation: 'move',
-      actor: { id: user.id, name: user.displayName },
-      context: req.storage?.id || 'documents'
-    });
-    if (result && result.skipped) {
-      res.json({ skipped: true, operation: 'move', conflict: result.conflict });
-      return;
-    }
-    const document = result || previousDocument;
-    const activityType = getDocumentActivityType(previousDocument, document);
-    await appendActivity(getDocumentRoot(req), {
-      type: activityType,
-      fileId: document.id,
-      fileName: document.name,
-      userId: user.id,
-      userName: user.displayName
-    });
-    await invalidatePreview(getDocumentRoot(req), document);
-    res.json({ file: document });
-  } catch (error) {
-    if (error && error.code === 'FILE_CONFLICT') {
-      res.status(409).json(error.details || { error: 'FILE_CONFLICT', message: error.message });
-      return;
-    }
-    next(error);
-  }
-});
-
-router.post('/files/:fileId/copy', async function(req, res, next) {
-  try {
-    ensureWritableStorage(req);
-    const user = getRequestUser(req);
-    const result = await copyDocument(getDocumentRoot(req), req.params.fileId, {
-      targetDirectory: req.body.targetDirectory,
-      targetName: req.body.targetName,
-      conflictResolution: req.body.conflictResolution,
-      directoryConflictResolution: req.body.directoryConflictResolution,
-      directoryConflictResolutions: req.body.directoryConflictResolutions,
-      fileConflictResolution: req.body.fileConflictResolution,
-      fileConflictResolutions: req.body.fileConflictResolutions,
-      operation: 'copy',
-      actor: { id: user.id, name: user.displayName },
-      context: req.storage?.id || 'documents'
-    });
-    if (result && result.skipped) {
-      res.json({ skipped: true, operation: 'copy', conflict: result.conflict });
-      return;
-    }
-    const copiedDocument = result;
-    await appendActivity(getDocumentRoot(req), {
-      type: 'copy',
-      fileId: copiedDocument.id,
-      fileName: copiedDocument.name,
-      userId: user.id,
-      userName: user.displayName
-    });
-    await invalidatePreview(getDocumentRoot(req), copiedDocument);
-    res.status(201).json({ file: copiedDocument });
-  } catch (error) {
-    if (error && error.code === 'FILE_CONFLICT') {
-      res.status(409).json(error.details || { error: 'FILE_CONFLICT', message: error.message });
-      return;
-    }
-    next(error);
-  }
-});
-
-router.delete('/files/:fileId', async function(req, res, next) {
-  try {
-    ensureWritableStorage(req);
-    const user = getRequestUser(req);
-    const deletedDocument = await deleteDocument(getDocumentRoot(req), req.params.fileId, {
-      actor: { id: user.id, name: user.displayName },
-      context: req.storage?.id || 'documents'
-    });
-    await appendActivity(getDocumentRoot(req), {
-      type: 'recycle',
-      fileId: deletedDocument.id,
-      fileName: deletedDocument.name,
-      userId: user.id,
-      userName: user.displayName
-    });
-    res.status(204).end();
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get('/recycle', async function(req, res, next) {
-  try {
-    const entries = (await listRecycledEntries(getDocumentRoot(req))).map((entry) => ({
-      ...entry,
-      thumbnailUrl: entry.previewVersion ? getThumbnailPublicUrl(entry.fileId, entry.previewVersion, req.storage?.id || 'documents') : null
-    }));
-    res.json({ entries });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.post('/recycle/:entryId/restore', async function(req, res, next) {
-  try {
-    ensureWritableStorage(req);
-    const user = getRequestUser(req);
-    const result = await restoreRecycledEntry(getDocumentRoot(req), req.params.entryId, {
-      actor: { id: user.id, name: user.displayName },
-      context: req.storage?.id || 'documents',
-      conflictResolution: req.body?.conflictResolution
-    });
-    if (result?.skipped) {
-      res.json(result);
-      return;
-    }
-    if (result?.conflict) {
-      const source = result.source || {};
-      res.status(409).json({
-        error: 'FILE_CONFLICT',
-        message: 'A file already exists at the restore location.',
-        conflictType: 'file',
-        source: {
-          name: source.originalName || 'Recovered file',
-          type: 'file',
-          size: source.versionSize || 0,
-          modifiedAt: source.deletedAt || null,
-          relativePath: source.originalPath || '',
-          mimeType: null,
-          kind: 'file'
-        },
-        target: {
-          name: source.originalName || 'Existing file',
-          type: 'file',
-          size: 0,
-          modifiedAt: null,
-          relativePath: source.originalPath || '',
-          mimeType: null,
-          kind: 'file'
-        }
-      });
-      return;
-    }
-    const restoredDocument = await getDocumentById(getDocumentRoot(req), result.fileId);
-    await appendActivity(getDocumentRoot(req), {
-      type: 'restore',
-      fileId: restoredDocument.id,
-      fileName: restoredDocument.name,
-      userId: user.id,
-      userName: user.displayName
-    });
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.delete('/recycle/:entryId', async function(req, res, next) {
-  try {
-    ensureWritableStorage(req);
-    const user = getRequestUser(req);
-    const recycledEntries = await listRecycledEntries(getDocumentRoot(req));
-    const recycledEntry = recycledEntries.find((entry) => entry.id === req.params.entryId);
-    const deleted = await deleteRecycledEntry(getDocumentRoot(req), req.params.entryId);
-    if (!deleted) {
-      throw createHttpError(404, 'Recycled entry not found.');
-    }
-    await appendActivity(getDocumentRoot(req), {
-      type: 'delete',
-      fileId: recycledEntry?.fileId || req.params.entryId,
-      fileName: recycledEntry?.originalName || recycledEntry?.originalPath || req.params.entryId,
-      userId: user.id,
-      userName: user.displayName
-    });
-    if (recycledEntry?.fileId) {
-      await removeActivityEntriesForFile(getDocumentRoot(req), recycledEntry.fileId);
-      await removeDocumentReferences(getDocumentRoot(req), recycledEntry.fileId);
-    }
-    res.status(204).end();
-  } catch (error) {
-    next(error);
-  }
-});
-
 router.get('/files/:fileId/versions', async function(req, res, next) {
   try {
     const document = await getDocumentById(getDocumentRoot(req), req.params.fileId);
@@ -763,7 +538,7 @@ router.get('/files/:fileId/versions', async function(req, res, next) {
 
 router.post('/files/:fileId/versions/:versionId/restore', async function(req, res, next) {
   try {
-    ensureWritableStorage(req);
+    ensureWritableMount(req);
     const user = getRequestUser(req);
     const document = await getDocumentById(getDocumentRoot(req), req.params.fileId);
     if (document.isDirectory) {
@@ -804,7 +579,7 @@ router.get('/files/:fileId/versions/:versionId/view', async function(req, res, n
 
 router.patch('/files/:fileId/versions/:versionId', async function(req, res, next) {
   try {
-    ensureWritableStorage(req);
+    ensureWritableMount(req);
     const document = await getDocumentById(getDocumentRoot(req), req.params.fileId);
     if (document.isDirectory) {
       throw createHttpError(404, 'Folders do not have version history.');
@@ -820,7 +595,7 @@ router.patch('/files/:fileId/versions/:versionId', async function(req, res, next
 
 router.delete('/files/:fileId/versions/:versionId', async function(req, res, next) {
   try {
-    ensureWritableStorage(req);
+    ensureWritableMount(req);
     const user = getRequestUser(req);
     const document = await getDocumentById(getDocumentRoot(req), req.params.fileId);
     if (document.isDirectory) {
@@ -922,12 +697,12 @@ router.post('/shares', async function(req, res, next) {
       throw createHttpError(400, 'Folders cannot be shared.');
     }
 
-    const share = await createShare(config.documentRoot, {
-      storageId: req.storage?.id || 'documents',
+    const share = await createShare(config.stateRoot, {
+      mountId: req.mountId || 'documents',
       fileId: req.body.fileId,
       permission: req.body.permission,
       createdBy: user.id,
-      ownerUserId: req.storage?.id === 'documents' ? user.id : null
+      ownerUserId: user.id
     });
     res.status(201).json({
       share: share,
@@ -948,7 +723,7 @@ router.get('/files/:fileId/public-shares', async function(req, res, next) {
     if (document.isDirectory) {
       throw createHttpError(400, 'Only files can be shared publicly.');
     }
-    const shares = await listPublicSharesByFile(config.documentRoot, req.params.fileId);
+    const shares = await listPublicSharesByFile(config.stateRoot, req.params.fileId);
     const visibleShares = shares.filter((share) => req.auth.user.role === 'admin' || share.createdBy === user.id);
     const baseUrl = config.getPublicAppBaseUrl(req);
     res.json({
@@ -971,9 +746,9 @@ router.post('/files/:fileId/public-share', async function(req, res, next) {
       throw createHttpError(400, 'Only files can be shared publicly.');
     }
     const permission = String(req.body.permission || 'read').trim().toLowerCase();
-    const share = await createPublicShare(config.documentRoot, {
+    const share = await createPublicShare(config.stateRoot, {
       resourceId: req.params.fileId,
-      storageId: req.storage?.id || 'documents',
+      mountId: req.mountId || 'documents',
       permission: permission,
       password: req.body.password ?? null,
       downloadEnabled: req.body.downloadEnabled !== false,
@@ -981,7 +756,7 @@ router.post('/files/:fileId/public-share', async function(req, res, next) {
       maxAccessCount: req.body.maxAccessCount ?? null,
       note: req.body.note ?? null,
       createdBy: user.id,
-      ownerUserId: req.storage?.id === 'documents' ? user.id : null
+      ownerUserId: user.id
     });
     res.status(201).json(getPublicShareResponse(share, config.getPublicAppBaseUrl(req)));
   } catch (error) {
@@ -995,11 +770,11 @@ router.patch('/public-shares/:shareId', async function(req, res, next) {
       throw createHttpError(401, 'Authentication required.');
     }
     const user = getRequestUser(req);
-    const existing = await getPublicShareById(config.documentRoot, req.params.shareId);
+    const existing = await getPublicShareById(config.stateRoot, req.params.shareId);
     if (req.auth.user.role !== 'admin' && existing.createdBy !== user.id) {
       throw createHttpError(403, 'You are not allowed to manage this share.');
     }
-    const updatedShare = await updatePublicShare(config.documentRoot, req.params.shareId, {
+    const updatedShare = await updatePublicShare(config.stateRoot, req.params.shareId, {
       permission: req.body.permission,
       password: Object.prototype.hasOwnProperty.call(req.body, 'password') ? req.body.password : undefined,
       downloadEnabled: req.body.downloadEnabled,
@@ -1020,11 +795,11 @@ router.delete('/public-shares/:shareId', async function(req, res, next) {
       throw createHttpError(401, 'Authentication required.');
     }
     const user = getRequestUser(req);
-    const existing = await getPublicShareById(config.documentRoot, req.params.shareId);
+    const existing = await getPublicShareById(config.stateRoot, req.params.shareId);
     if (req.auth.user.role !== 'admin' && existing.createdBy !== user.id) {
       throw createHttpError(403, 'You are not allowed to manage this share.');
     }
-    const deleted = await deletePublicShare(config.documentRoot, req.params.shareId);
+    const deleted = await deletePublicShare(config.stateRoot, req.params.shareId);
     if (!deleted) {
       throw createHttpError(404, 'Share link not found.');
     }
@@ -1037,20 +812,24 @@ router.delete('/public-shares/:shareId', async function(req, res, next) {
 router.get('/shares/:shareId/launch', async function(req, res, next) {
   try {
     const password = req.get('X-Share-Password') || req.query.password || null;
-    const validatedShare = await validatePublicShareAccess(config.documentRoot, req.params.shareId, { password: password });
+    const validatedShare = await validatePublicShareAccess(config.stateRoot, req.params.shareId, { password: password });
     if (validatedShare.permission === 'read_write' && !config.allowPublicEditing) {
       throw createHttpError(403, 'Public edit links are disabled.');
     }
 
-    const storageManager = req.app.locals.storageManager;
-    const { storage } = storageManager.resolveOrHttpError(validatedShare.storageId);
-    const shareDocumentRoot = validatedShare.storageId === 'documents' && validatedShare.ownerUserId
-      ? getUserStorageRoot(config, validatedShare.ownerUserId)
-      : (validatedShare.storageId === 'shared' ? getSharedStorageRoot(config) : storage.root);
+    const mountRegistry = req.app.locals.mountRegistry;
+    let shareDocumentRoot = getDocumentRoot(req);
+    if (validatedShare.mountId) {
+      const shareMount = mountRegistry.get(validatedShare.mountId);
+      if (shareMount) {
+        shareDocumentRoot = shareMount.root;
+      }
+    } else if (validatedShare.ownerUserId) {
+      shareDocumentRoot = path.join(config.mountRoot, 'users', String(validatedShare.ownerUserId));
+    }
 
     const document = await getDocumentById(shareDocumentRoot, validatedShare.resourceId);
-    const share = await consumePublicShareAccess(config.documentRoot, validatedShare.id);
-    req.storage = storage;
+    const share = await consumePublicShareAccess(config.stateRoot, validatedShare.id);
     const launchPayload = await buildLaunchPayload(
       req,
       document,
@@ -1059,7 +838,8 @@ router.get('/shares/:shareId/launch', async function(req, res, next) {
         shareId: share.id,
         shareOwnerUserId: share.ownerUserId,
         sharePermission: share.permission,
-        shareDownloadEnabled: share.downloadEnabled
+        shareDownloadEnabled: share.downloadEnabled,
+        mountId: validatedShare.mountId || null
       }
     );
     res.json(launchPayload);
@@ -1092,6 +872,5 @@ router.get('/search', async function(req, res, next) {
 module.exports = router;
 module.exports.getDocumentRoot = getDocumentRoot;
 module.exports.normalizeEditorMode = normalizeEditorMode;
-module.exports.getDocumentActivityType = getDocumentActivityType;
 module.exports.buildLaunchPayload = buildLaunchPayload;
 module.exports.resolveThumbnailRequest = resolveThumbnailRequest;

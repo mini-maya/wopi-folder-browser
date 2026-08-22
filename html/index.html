@@ -37,10 +37,7 @@
          <h1>WOPI Folder Browser</h1>
        </div>
        <div class="heading-actions">
-         <label class="theme-label" for="storage-select">Storage</label>
-         <select id="storage-select" aria-label="Storage">
-           <option value="documents">Documents</option>
-         </select>
+         <div class="mount-selector" id="mount-selector" role="tablist" aria-label="Mounts"></div>
          <label class="theme-label" for="theme-select">Theme</label>
          <select id="theme-select" aria-label="Theme">
            <option value="auto">Auto</option>
@@ -60,8 +57,6 @@
            </svg>
          </button>
          <div id="auth-controls" class="auth-controls">
-           <button id="my-files-button" type="button" class="secondary hidden storage-toggle">My Files</button>
-           <button id="shared-files-button" type="button" class="secondary hidden storage-toggle">Shared Files</button>
            <button id="admin-button" type="button" class="secondary hidden">Administration</button>
            <button id="account-button" type="button" class="secondary hidden">Account</button>
            <button id="login-button" type="button" class="secondary">Login</button>
@@ -76,7 +71,7 @@
 
      <dl class="details">
        <div>
-         <dt>Documents</dt>
+         <dt>Mount</dt>
          <dd id="document-root">Loading...</dd>
        </div>
        <div>
@@ -97,13 +92,6 @@
        <div class="bulk-actions-primary">
          <button id="new-menu-button" type="button" class="secondary menu-button" aria-haspopup="menu" aria-expanded="false">New...</button>
          <button id="upload-button" type="button" class="secondary">Upload...</button>
-         <button id="recycle-button" type="button" class="secondary hidden recycle-toggle" aria-pressed="false">
-           <svg class="recycle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-             <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h4v10h-4V9zm-6 0h2l1 11h8l1-11h2l-1 13H5L4 9z" fill="currentColor"/>
-           </svg>
-           <span class="recycle-toggle-label">Recycle Bin</span>
-           <span class="entry-badge recycle-count" data-recycle-count>0</span>
-         </button>
        </div>
        <div class="bulk-actions-secondary">
          <span id="selection-summary" class="hidden">0 selected</span>

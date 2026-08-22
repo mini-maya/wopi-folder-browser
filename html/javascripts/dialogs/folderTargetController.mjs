@@ -7,10 +7,6 @@ export function createFolderTargetController({
 	getDocumentById,
 	onSetStatus,
 	onLoadPage,
-	onMoveDocuments,
-	onCopyDocuments,
-	onMoveDocument,
-	onCopyDocument,
 	onRenderVersionList,
 	onViewerSubmitLaunchPayload
 }) {
@@ -53,7 +49,7 @@ export function createFolderTargetController({
 
 	function openNameEntryDialog({ action, title, buttonText, defaultValue, fileId, directory, versionId, documentType }) {
 		const documentEntry = fileId ? getDocumentById(fileId) : null;
-		const needsTargetDirectory = action === 'new-folder' || action === 'save-as';
+		const needsTargetDirectory = action === 'new-folder';
 		appState.folderPickerAction = action;
 		appState.folderPickerSelectionIds = fileId ? [fileId] : [];
 		appState.folderPickerBulkMode = false;
@@ -89,8 +85,7 @@ export function createFolderTargetController({
 			? getDocumentById(appState.folderPickerSelectionIds[0])
 			: null;
 		if (
-			appState.folderPickerAction === 'save-as'
-			|| appState.folderPickerAction === 'new-document'
+			appState.folderPickerAction === 'new-document'
 			|| (selectedDocument && !isFolderEntry(selectedDocument))
 		) {
 			selectBasenameForInput(elements.folderPickerName, elements.folderPickerName.value);
@@ -112,19 +107,13 @@ export function createFolderTargetController({
 		appState.folderPickerBulkMode = isBulkMode;
 		elements.folderPickerModal.classList.remove('hidden');
 		elements.folderPickerModal.setAttribute('aria-hidden', 'false');
-		elements.folderPickerConfirm.textContent = action === 'move' ? 'Move' : (action === 'save-as' ? 'Save' : 'Copy');
+		elements.folderPickerConfirm.textContent = 'Create';
 		elements.folderPickerTitle.textContent = isBulkMode
-			? (action === 'move' ? 'Move selected items to folder' : (action === 'save-as' ? 'Save selected item as' : 'Copy selected items to folder'))
-			: (action === 'move' ? 'Move to folder' : (action === 'save-as' ? 'Save copy as' : 'Copy to folder'));
+			? 'Create new item in folder'
+			: 'Create new item in folder';
 		elements.folderPickerTarget.closest('.modal-field').classList.remove('hidden');
 		elements.folderPickerName.closest('.modal-field').classList.toggle('hidden', isBulkMode);
-		populateFolderPicker(selectedDocuments[0], action === 'save-as' ? false : isBulkMode);
-		if (action === 'save-as') {
-			elements.folderPickerTarget.value = selectedDocuments[0]?.relativePath.includes('/')
-				? selectedDocuments[0].relativePath.slice(0, selectedDocuments[0].relativePath.lastIndexOf('/'))
-				: '';
-			elements.folderPickerName.value = selectedDocuments[0]?.name ?? '';
-		}
+		populateFolderPicker(selectedDocuments[0], isBulkMode);
 		if (isBulkMode) {
 			elements.folderPickerTarget.focus();
 		} else {
@@ -223,40 +212,6 @@ export function createFolderTargetController({
 				closeFolderTargetDialog();
 				onSetStatus('Current version named.');
 				return;
-			}
-			default: {
-				const selectionIds = appState.folderPickerSelectionIds;
-				const isBulkMode = appState.folderPickerBulkMode;
-				const documents = selectionIds
-					.map((fileId) => getDocumentById(fileId))
-					.filter(Boolean);
-				if (!documents.length) {
-					return;
-				}
-				try {
-					if (isBulkMode) {
-						if (action === 'move') {
-							await onMoveDocuments(documents, targetDirectory);
-						} else {
-							await onCopyDocuments(documents, targetDirectory);
-						}
-					} else {
-						const fileId = selectionIds[0];
-						if (action === 'move') {
-							await onMoveDocument(fileId, targetName, targetDirectory);
-						} else {
-							await onCopyDocument(fileId, targetName, targetDirectory);
-						}
-					}
-				} catch (error) {
-					onSetStatus(error.message, true);
-					return;
-				}
-				await onLoadPage();
-				closeFolderTargetDialog();
-				onSetStatus(isBulkMode
-					? (action === 'move' ? 'Selected items moved.' : 'Selected items copied.')
-					: (action === 'move' ? 'Entry moved.' : 'Entry copied.'));
 			}
 		}
 	}

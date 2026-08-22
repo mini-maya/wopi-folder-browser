@@ -49,9 +49,10 @@ function createClient(baseUrl) {
 
 async function startIsolatedServer(options = {}) {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-auth-flow-'));
-	const documentRoot = path.join(tempRoot, 'storage');
+	const mountRoot = path.join(tempRoot, 'mounts');
 	const stateRoot = path.join(tempRoot, 'state');
-	await fs.mkdir(documentRoot, { recursive: true });
+	await fs.mkdir(path.join(mountRoot, 'documents'), { recursive: true });
+	await fs.mkdir(path.join(mountRoot, 'archive'), { recursive: true });
 	await fs.mkdir(stateRoot, { recursive: true });
 
 	const collaboraServer = http.createServer(function(req, res) {
@@ -74,7 +75,7 @@ async function startIsolatedServer(options = {}) {
 	await new Promise((resolve) => collaboraServer.listen(0, resolve));
 	const collaboraAddress = collaboraServer.address();
 
-	process.env.DOCUMENT_ROOT = documentRoot;
+	process.env.MOUNT_ROOT = mountRoot;
 	process.env.WOPI_STATE_ROOT = stateRoot;
 	process.env.SESSION_SECRET = 'test-session-secret';
 	process.env.ACCESS_TOKEN_SECRET = 'test-access-token-secret';
@@ -89,9 +90,123 @@ async function startIsolatedServer(options = {}) {
 		baseUrl: `http://127.0.0.1:${address.port}`,
 		server,
 		collaboraServer,
-		tempRoot
+		tempRoot,
+		mountRoot
 	};
 }
+
+async function assignMounts(client, userId, mounts) {
+	const response = await client.request(`/api/admin/users/${encodeURIComponent(userId)}/mounts`, {
+		method: 'PUT',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ mounts })
+	});
+	assert.equal(response.response.status, 200);
+	return response;
+}
+
+test('a user without any mount permissions can still authenticate and sees an empty mount list', async function() {
+	const instance = await startIsolatedServer();
+	const adminClient = createClient(instance.baseUrl);
+	const userClient = createClient(instance.baseUrl);
+	const anonymousClient = createClient(instance.baseUrl);
+
+	try {
+		let requestResult = await anonymousClient.request('/api/auth/setup-initial-admin', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
+		});
+		assert.equal(requestResult.response.status, 201);
+
+		requestResult = await adminClient.request('/api/auth/login', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
+		});
+		assert.equal(requestResult.response.status, 200);
+
+		requestResult = await adminClient.request('/api/admin/users', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'charlie', role: 'user', password: 'CharliePassword123', generatePassword: false })
+		});
+		assert.equal(requestResult.response.status, 201);
+
+		requestResult = await userClient.request('/api/auth/login', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'charlie', password: 'CharliePassword123' })
+		});
+		assert.equal(requestResult.response.status, 200);
+		assert.equal(requestResult.payload.authenticated, true);
+
+		requestResult = await userClient.request('/api/mounts');
+		assert.equal(requestResult.response.status, 200);
+		assert.deepEqual(requestResult.payload, []);
+	} finally {
+		await new Promise((resolve) => instance.server.close(resolve));
+		await new Promise((resolve) => instance.collaboraServer.close(resolve));
+	}
+});
+
+test('revoking a selected mount clears stale session access and allows the permission to be restored', async function() {
+	const instance = await startIsolatedServer();
+	const adminClient = createClient(instance.baseUrl);
+	const userClient = createClient(instance.baseUrl);
+	const anonymousClient = createClient(instance.baseUrl);
+
+	try {
+		let requestResult = await anonymousClient.request('/api/auth/setup-initial-admin', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
+		});
+		assert.equal(requestResult.response.status, 201);
+
+		requestResult = await adminClient.request('/api/auth/login', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
+		});
+		assert.equal(requestResult.response.status, 200);
+
+		requestResult = await adminClient.request('/api/admin/users', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'alice', role: 'user', password: 'AlicePassword123', generatePassword: false })
+		});
+		assert.equal(requestResult.response.status, 201);
+		const userId = requestResult.payload.user.id;
+
+		await assignMounts(adminClient, userId, ['documents']);
+
+		requestResult = await userClient.request('/api/auth/login', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'alice', password: 'AlicePassword123' })
+		});
+		assert.equal(requestResult.response.status, 200);
+
+		requestResult = await userClient.request('/api/mounts');
+		assert.equal(requestResult.response.status, 200);
+		assert.deepEqual(requestResult.payload.map((mount) => mount.id), ['documents']);
+
+		await assignMounts(adminClient, userId, []);
+
+		requestResult = await userClient.request('/api/mounts');
+		assert.equal(requestResult.response.status, 200);
+		assert.deepEqual(requestResult.payload, []);
+
+		await assignMounts(adminClient, userId, ['documents']);
+		requestResult = await userClient.request('/api/mounts');
+		assert.equal(requestResult.response.status, 200);
+		assert.deepEqual(requestResult.payload.map((mount) => mount.id), ['documents']);
+	} finally {
+		await new Promise((resolve) => instance.server.close(resolve));
+		await new Promise((resolve) => instance.collaboraServer.close(resolve));
+	}
+});
 
 test('setup, authentication, authorization and storage isolation flow', async function() {
 	const instance = await startIsolatedServer();
@@ -147,12 +262,16 @@ test('setup, authentication, authorization and storage isolation flow', async fu
 		assert.equal(requestResult.response.status, 201);
 		const userBId = requestResult.payload.user.id;
 
+		await assignMounts(adminClient, userAId, ['documents']);
+		await assignMounts(adminClient, userBId, ['archive']);
+
 		requestResult = await userAClient.request('/api/auth/login', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ username: 'alice', password: 'AlicePassword123' })
 		});
 		assert.equal(requestResult.response.status, 200);
+		await assignMounts(adminClient, requestResult.payload.user.id, ['documents', 'archive']);
 
 		requestResult = await userAClient.request('/api/files', {
 			method: 'POST',
@@ -251,8 +370,8 @@ test('prune-missing endpoint cleans only missing entries in current context', as
 		});
 		assert.equal(requestResult.response.status, 200);
 		const adminUserId = requestResult.payload.user.id;
-		const userDocumentsRoot = path.join(instance.tempRoot, 'storage', 'users', adminUserId);
-		await fs.mkdir(userDocumentsRoot, { recursive: true });
+		await assignMounts(client, adminUserId, ['documents']);
+		const userDocumentsRoot = path.join(instance.mountRoot, 'documents');
 		await fs.writeFile(path.join(userDocumentsRoot, 'present.odt'), 'present');
 		const contextStateRoot = getContextStateRoot(userDocumentsRoot);
 		await fs.mkdir(contextStateRoot, { recursive: true });
@@ -263,7 +382,7 @@ test('prune-missing endpoint cleans only missing entries in current context', as
 			}
 		}, null, 2), 'utf8');
 
-		requestResult = await client.request('/api/files/prune-missing', {
+		requestResult = await client.request('/api/files/prune-missing?mountId=documents', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({})
@@ -302,10 +421,10 @@ test('launch activities distinguish open from view', async function() {
 		});
 		assert.equal(requestResult.response.status, 200);
 		const adminUserId = requestResult.payload.user.id;
-		const userDocumentsRoot = path.join(instance.tempRoot, 'storage', 'users', adminUserId);
-		await fs.mkdir(userDocumentsRoot, { recursive: true });
+		await assignMounts(client, adminUserId, ['documents']);
+		const userDocumentsRoot = path.join(instance.mountRoot, 'documents');
 		await fs.writeFile(path.join(userDocumentsRoot, 'launch-activity-demo.odt'), 'demo');
-		requestResult = await client.request('/api/files');
+		requestResult = await client.request('/api/files?mountId=documents');
 		assert.equal(requestResult.response.status, 200);
 		const fileEntry = (Array.isArray(requestResult.payload.documents) ? requestResult.payload.documents : [])
 			.find((document) => document.relativePath === 'launch-activity-demo.odt');
@@ -341,72 +460,4 @@ test('activity labels include a read-only view state', async function() {
 	assert.equal(getActivityLabel('restore'), 'Restored');
 	assert.equal(getActivityLabel('delete'), 'Deleted');
 	assert.equal(getActivityLabel('unknown-type'), 'unknown-type');
-});
-
-test('recycle flows record recycle, restore and final delete activities', async function() {
-	const instance = await startIsolatedServer();
-	const client = createClient(instance.baseUrl);
-
-	try {
-		let requestResult = await client.request('/api/auth/setup-initial-admin', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
-		});
-		assert.equal(requestResult.response.status, 201);
-
-		requestResult = await client.request('/api/auth/login', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ username: 'admin', password: 'AdminPassword123' })
-		});
-		assert.equal(requestResult.response.status, 200);
-		const adminUserId = requestResult.payload.user.id;
-		const userDocumentsRoot = path.join(instance.tempRoot, 'storage', 'users', adminUserId);
-		await fs.mkdir(userDocumentsRoot, { recursive: true });
-		await fs.writeFile(path.join(userDocumentsRoot, 'recycle-activity-demo.odt'), 'demo');
-		requestResult = await client.request('/api/files');
-		assert.equal(requestResult.response.status, 200);
-		const originalFile = (Array.isArray(requestResult.payload.documents) ? requestResult.payload.documents : [])
-			.find((document) => document.relativePath === 'recycle-activity-demo.odt');
-		assert.ok(originalFile);
-
-		requestResult = await client.request(`/api/files/${encodeURIComponent(originalFile.id)}`, { method: 'DELETE' });
-		assert.equal(requestResult.response.status, 204);
-
-		requestResult = await client.request('/api/recycle');
-		assert.equal(requestResult.response.status, 200);
-		let recycledEntry = (Array.isArray(requestResult.payload.entries) ? requestResult.payload.entries : [])
-			.find((entry) => entry.fileId === originalFile.id);
-		assert.ok(recycledEntry);
-
-		requestResult = await client.request(`/api/recycle/${encodeURIComponent(recycledEntry.id)}/restore`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({})
-		});
-		assert.equal(requestResult.response.status, 200);
-
-		requestResult = await client.request(`/api/files/${encodeURIComponent(originalFile.id)}`, { method: 'DELETE' });
-		assert.equal(requestResult.response.status, 204);
-
-		requestResult = await client.request('/api/recycle');
-		assert.equal(requestResult.response.status, 200);
-		recycledEntry = (Array.isArray(requestResult.payload.entries) ? requestResult.payload.entries : [])
-			.find((entry) => entry.fileId === originalFile.id);
-		assert.ok(recycledEntry);
-
-		requestResult = await client.request(`/api/recycle/${encodeURIComponent(recycledEntry.id)}`, { method: 'DELETE' });
-		assert.equal(requestResult.response.status, 204);
-
-		requestResult = await client.request('/api/activities?limit=20');
-		assert.equal(requestResult.response.status, 200);
-		const recycleActivities = (Array.isArray(requestResult.payload.activities) ? requestResult.payload.activities : [])
-			.filter((activityEntry) => activityEntry.fileId === originalFile.id && ['recycle', 'restore', 'delete'].includes(activityEntry.type));
-		assert.deepEqual(recycleActivities.map((activityEntry) => activityEntry.type), []);
-	} finally {
-		await new Promise((resolve, reject) => instance.server.close((error) => (error ? reject(error) : resolve())));
-		await new Promise((resolve, reject) => instance.collaboraServer.close((error) => (error ? reject(error) : resolve())));
-		await fs.rm(instance.tempRoot, { recursive: true, force: true });
-	}
 });

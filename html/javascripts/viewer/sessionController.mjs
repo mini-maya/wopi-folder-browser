@@ -149,11 +149,11 @@ export function createViewerSessionController({
 		elements.viewerTitle.textContent = defaultViewerTitle;
 		elements.viewerSubtitle.textContent = defaultViewerSubtitle;
 		elements.viewerFrame.src = 'about:blank';
-		const currentStorageId = appState.currentStorageId || 'documents';
-		const storagePath = window.location.pathname.startsWith('/storage/')
+		const currentMountId = appState.currentMountId || 'documents';
+		const mountPath = window.location.pathname.startsWith('/mount/')
 			? window.location.pathname
-			: `/storage/${encodeURIComponent(currentStorageId)}`;
-		window.history.replaceState(null, '', storagePath);
+			: `/mount/${encodeURIComponent(currentMountId)}`;
+		window.history.replaceState(null, '', mountPath);
 		await reloadPage();
 		setStatus('Closed document.');
 	}

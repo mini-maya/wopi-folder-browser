@@ -20,7 +20,7 @@ test('createPublicShare persists defaults and listPublicSharesByFile returns mat
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-public-share-'));
 	const share = await createPublicShare(tempRoot, {
 		resourceId: 'file-1',
-		storageId: 'documents',
+		mountId: 'documents',
 		permission: 'read',
 		createdBy: 'user-1',
 		ownerUserId: 'user-1'
@@ -43,7 +43,7 @@ test('validatePublicShareAccess enforces password and consumePublicShareAccess i
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-public-share-'));
 	const share = await createPublicShare(tempRoot, {
 		resourceId: 'file-2',
-		storageId: 'shared',
+		mountId: 'shared',
 		permission: 'read_write',
 		password: 'SecretPass123!',
 		createdBy: 'user-2'
@@ -72,7 +72,7 @@ test('validatePublicShareAccess enforces maxAccessCount and transitions to exhau
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-public-share-'));
 	const share = await createPublicShare(tempRoot, {
 		resourceId: 'file-3',
-		storageId: 'external',
+		mountId: 'external',
 		permission: 'read',
 		maxAccessCount: 2,
 		createdBy: 'user-3'
@@ -97,7 +97,7 @@ test('updatePublicShare updates mutable fields and deletePublicShare removes lin
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-public-share-'));
 	const share = await createPublicShare(tempRoot, {
 		resourceId: 'file-4',
-		storageId: 'documents',
+		mountId: 'documents',
 		permission: 'read',
 		createdBy: 'user-4',
 		ownerUserId: 'user-4'

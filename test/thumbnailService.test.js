@@ -67,12 +67,12 @@ test('renderOfficeThumbnail returns THUMBNAIL_RENDERED and stores PNG', async fu
 			requestTimeoutMs: 5000,
 			userId: 'user-1',
 			userName: 'User One',
-			storageContext: 'shared'
+			mountId: 'documents'
 		});
 
 		assert.equal(result.status, 'THUMBNAIL_RENDERED');
 		assert.equal(result.mimeType, 'image/png');
-		assert.equal(result.thumbnailUrl, '/storage/documents/thumbnails/file-123/7');
+		assert.equal(result.thumbnailUrl, '/mount/documents/thumbnails/file-123/7');
 		assert.ok(result.width <= 512);
 		assert.ok(result.height <= 512);
 	} finally {
@@ -119,7 +119,7 @@ test('renderOfficeThumbnail returns CONVERSION_NOT_SUPPORTED when capabilities d
 			requestTimeoutMs: 5000,
 			userId: 'user-1',
 			userName: 'User One',
-			storageContext: 'shared'
+			mountId: 'documents'
 		});
 
 		assert.equal(result.status, 'CONVERSION_NOT_SUPPORTED');
@@ -154,7 +154,7 @@ test('renderOfficeThumbnail returns INVALID_FILE when Office signature is invali
 		requestTimeoutMs: 300,
 		userId: 'user-1',
 		userName: 'User One',
-		storageContext: 'shared'
+		mountId: 'documents'
 	});
 
 	assert.equal(result.status, 'INVALID_FILE');
@@ -214,7 +214,7 @@ test('renderOfficeThumbnail tries alternative payload strategies after 400 respo
 			requestTimeoutMs: 5000,
 			userId: 'user-1',
 			userName: 'User One',
-			storageContext: 'shared'
+			mountId: 'documents'
 		});
 
 		assert.equal(result.status, 'THUMBNAIL_RENDERED');
@@ -281,7 +281,7 @@ test('renderOfficeThumbnail falls back to multipart upload after WOPI convert 40
 			requestTimeoutMs: 5000,
 			userId: 'user-1',
 			userName: 'User One',
-			storageContext: 'shared'
+			mountId: 'documents'
 		});
 
 		assert.equal(result.status, 'THUMBNAIL_RENDERED');

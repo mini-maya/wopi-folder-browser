@@ -11,6 +11,11 @@ export function createUploadController({
 	loadPage,
 	onCloseOpenContextMenu
 }) {
+	function getCurrentMountId() {
+		const match = window.location.pathname.match(/^\/mount\/([^/]+)/);
+		return match?.[1] ? decodeURIComponent(match[1]) : null;
+	}
+
 	function getUploadTargetLabel() {
 		return appState.uploadTargetDirectory || 'Root folder';
 	}
@@ -149,6 +154,7 @@ export function createUploadController({
 
 			const response = await fetch('/api/uploads', {
 				method: 'POST',
+				headers: getCurrentMountId() ? { 'X-Mount-Id': getCurrentMountId() } : undefined,
 				body: formData
 			});
 			const payload = await response.json().catch(() => null);

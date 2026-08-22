@@ -1,8 +1,8 @@
 export async function requestJson(url, options = {}) {
 	const headers = new Headers(options.headers || {});
-	const match = window.location.pathname.match(/^\/storage\/([^/]+)/);
-	if (match?.[1] && !headers.has('X-Storage-Id')) {
-		headers.set('X-Storage-Id', decodeURIComponent(match[1]));
+	const match = window.location.pathname.match(/^\/mount\/([^/]+)/);
+	if (match?.[1] && !headers.has('X-Mount-Id')) {
+		headers.set('X-Mount-Id', decodeURIComponent(match[1]));
 	}
 	const response = await fetch(url, {
 		...options,

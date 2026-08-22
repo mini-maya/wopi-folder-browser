@@ -36,7 +36,7 @@ test('init-admin CLI creates admin once and blocks second run', async function()
 
 	const sharedEnv = {
 		...process.env,
-		DOCUMENT_ROOT: documentRoot,
+		MOUNT_ROOT: documentRoot,
 		WOPI_STATE_ROOT: stateRoot,
 		SESSION_SECRET: 'test-session-secret',
 		ACCESS_TOKEN_SECRET: 'test-access-token-secret'
@@ -61,6 +61,36 @@ test('init-admin CLI creates admin once and blocks second run', async function()
 	}
 });
 
+test('init-admin CLI grants the admin access to all discovered mounts by default', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-init-admin-cli-mounts-'));
+	const stateRoot = path.join(tempRoot, 'state');
+	const mountRoot = path.join(tempRoot, 'mounts');
+	await fs.mkdir(stateRoot, { recursive: true });
+	await fs.mkdir(path.join(mountRoot, 'documents'), { recursive: true });
+	await fs.mkdir(path.join(mountRoot, 'projects'), { recursive: true });
+	await fs.mkdir(path.join(mountRoot, 'archive'), { recursive: true });
+
+	const sharedEnv = {
+		...process.env,
+		MOUNT_ROOT: mountRoot,
+		WOPI_STATE_ROOT: stateRoot,
+		SESSION_SECRET: 'test-session-secret',
+		ACCESS_TOKEN_SECRET: 'test-access-token-secret'
+	};
+
+	try {
+		const run = await runCli(
+			['./bin/init-admin.js', '--username', 'admin', '--password', 'AdminPassword123'],
+			sharedEnv
+		);
+		assert.equal(run.code, 0);
+		const usersPayload = JSON.parse(await fs.readFile(path.join(stateRoot, 'common', 'users.json'), 'utf8'));
+		assert.deepEqual(usersPayload.users[0].mounts, ['archive', 'documents', 'projects']);
+	} finally {
+		await fs.rm(tempRoot, { recursive: true, force: true });
+	}
+});
+
 test('init-admin CLI enforces default minimum password length', async function() {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-init-admin-cli-default-policy-'));
 	const documentRoot = path.join(tempRoot, 'documents');
@@ -70,7 +100,7 @@ test('init-admin CLI enforces default minimum password length', async function()
 
 	const sharedEnv = {
 		...process.env,
-		DOCUMENT_ROOT: documentRoot,
+		MOUNT_ROOT: documentRoot,
 		WOPI_STATE_ROOT: stateRoot,
 		SESSION_SECRET: 'test-session-secret',
 		ACCESS_TOKEN_SECRET: 'test-access-token-secret'
@@ -97,7 +127,7 @@ test('init-admin CLI respects PASSWORD_MIN_LENGTH override', async function() {
 
 	const sharedEnv = {
 		...process.env,
-		DOCUMENT_ROOT: documentRoot,
+		MOUNT_ROOT: documentRoot,
 		WOPI_STATE_ROOT: stateRoot,
 		SESSION_SECRET: 'test-session-secret',
 		ACCESS_TOKEN_SECRET: 'test-access-token-secret',

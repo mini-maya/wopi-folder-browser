@@ -2,33 +2,22 @@
 # Host folders are required and must exist before Docker starts.
 services:
   app:
-    build:
-      context: .
+    image: ghcr.io/mini-maya/wopi-folder-browser:latest
+    env_file:
+      - .env.production
     environment:
       PORT: 3000
-      DOCUMENT_ROOT: /documents
-      WOPI_STATE_ROOT: /var/lib/wopi-state
-      # Shared storage mode: disabled, auth, readonly, or readwrite.
-      SHARED_STORAGE_MODE: ${SHARED_STORAGE_MODE:-disabled}
-      SHARED_STORAGE_ROOT: ${SHARED_STORAGE_ROOT:-/shared}
-      # External storage is optional. Manage allowedUserIds via POST /api/admin/external-acl.
-      APP_BASE_URL: https://office.lan
-      COLLABORA_INTERNAL_URL: https://collabora.lan
-      COLLABORA_PUBLIC_URL: https://collabora.lan
-      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:?set ACCESS_TOKEN_SECRET}
-      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
-      PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-12}
       MAX_DOCUMENT_SIZE: 100mb
       NODE_EXTRA_CA_CERTS: /run/certs/collabora-ca.crt
     expose:
       - "3000"
     volumes:
       # Required host folders: document-storage, shared-storage, external-storage, wopi-state
-      - ${DOCUMENTS_HOST_PATH:?set DOCUMENTS_HOST_PATH}:/documents
-      - ${SHARED_STORAGE_HOST_PATH:?set SHARED_STORAGE_HOST_PATH}:/shared
-      - ${EXTERNAL_STORAGE_HOST_PATH:?set EXTERNAL_STORAGE_HOST_PATH}:/external/storage
-      - ${COLLABORA_CA_CERT_PATH:?set COLLABORA_CA_CERT_PATH}:/run/certs/collabora-ca.crt:ro
-      - ${WOPI_STATE_ROOT:?set WOPI_STATE_ROOT}:/var/lib/wopi-state
+      - /srv/wopi-folder-browser/document-storage:/documents
+      - /srv/wopi-folder-browser/shared-storage:/shared
+      - /srv/wopi-folder-browser/external-storage:/external/storage
+      - /srv/wopi-folder-browser/certs/ca.crt:/run/certs/collabora-ca.crt:ro
+      - /srv/wopi-folder-browser/wopi-state:/var/lib/wopi-state
     restart: unless-stopped
     networks:
       - backend
@@ -36,6 +25,8 @@ services:
 
   collabora:
     image: collabora/code:latest
+    env_file:
+      - .env.production
     environment:
       aliasgroup1: https://office\\.lan
       extra_params: >-
@@ -43,8 +34,6 @@ services:
         --o:ssl.termination=true
         --o:welcome.enable=false
         --o:server_name=collabora.lan
-      username: ${COLLABORA_ADMIN_USER:-admin}
-      password: ${COLLABORA_ADMIN_PASSWORD:?set COLLABORA_ADMIN_PASSWORD}
     expose:
       - "9980"
     restart: unless-stopped
@@ -55,4 +44,4 @@ networks:
   backend:
   proxy:
     external: true
-    name: ${PROXY_NETWORK:-proxy}
+    name: proxy

@@ -50,9 +50,11 @@ function createClient(baseUrl) {
 
 async function startIsolatedServer() {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-public-share-routes-'));
-	const documentRoot = path.join(tempRoot, 'storage');
+	const documentRoot = path.join(tempRoot, 'documents');
+	const mountRoot = path.join(tempRoot, 'mounts');
 	const stateRoot = path.join(tempRoot, 'state');
 	await fs.mkdir(documentRoot, { recursive: true });
+	await fs.mkdir(path.join(mountRoot, 'documents'), { recursive: true });
 	await fs.mkdir(stateRoot, { recursive: true });
 
 	const collaboraServer = http.createServer(function(req, res) {
@@ -75,7 +77,7 @@ async function startIsolatedServer() {
 	await new Promise((resolve) => collaboraServer.listen(0, resolve));
 	const collaboraAddress = collaboraServer.address();
 
-	process.env.DOCUMENT_ROOT = documentRoot;
+	process.env.MOUNT_ROOT = mountRoot;
 	process.env.WOPI_STATE_ROOT = stateRoot;
 	process.env.SESSION_SECRET = 'test-session-secret';
 	process.env.ACCESS_TOKEN_SECRET = 'test-access-token-secret';
@@ -114,6 +116,14 @@ test('public share routes support create/list/launch and enforce password + maxA
 
 	try {
 		await setupAdminAndLogin(adminClient);
+		const meResponse = await adminClient.request('/api/auth/me');
+		assert.equal(meResponse.status, 200);
+		const adminId = meResponse.payload?.user?.id;
+		assert.ok(adminId);
+		await adminClient.request(`/api/admin/users/${encodeURIComponent(adminId)}/mounts`, {
+			method: 'PUT',
+			body: { mounts: ['documents'] }
+		});
 
 		let response = await adminClient.request('/api/files', {
 			method: 'POST',
@@ -165,6 +175,7 @@ test('public share routes support create/list/launch and enforce password + maxA
 		assert.equal(response.status, 403);
 		assert.match(String(response.payload.message || ''), /access limit/i);
 	} finally {
+		delete process.env.MOUNT_ROOT;
 		instance.server.close();
 		instance.collaboraServer.close();
 	}

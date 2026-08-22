@@ -31,7 +31,7 @@ test('storeThumbnail persists the current preview for a file version', async fun
 		height: 1
 	});
 
-	assert.equal(stored.thumbnailUrl, '/storage/documents/thumbnails/file-1/7');
+	assert.equal(stored.thumbnailUrl, '/mount/documents/thumbnails/file-1/7');
 	const cached = await getCachedThumbnail(tempRoot, 'file-1', '7', 'documents');
 	assert.ok(cached);
 	assert.equal(cached.width, 1);
@@ -40,8 +40,8 @@ test('storeThumbnail persists the current preview for a file version', async fun
 });
 
 test('getThumbnailPublicUrl builds the preview URL from file id and version', function() {
-	assert.equal(getThumbnailPublicUrl('file-2', '8', 'documents'), '/storage/documents/thumbnails/file-2/8');
-	assert.equal(getThumbnailPublicUrl('file-2', '1787136501718-2048', 'external'), '/storage/external/thumbnails/file-2/1787136501718-2048');
+	assert.equal(getThumbnailPublicUrl('file-2', '8', 'documents'), '/mount/documents/thumbnails/file-2/8');
+	assert.equal(getThumbnailPublicUrl('file-2', '1787136501718-2048', 'external'), '/mount/external/thumbnails/file-2/1787136501718-2048');
 });
 
 test('invalidatePreview removes the current preview for a file', async function() {

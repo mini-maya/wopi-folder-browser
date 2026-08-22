@@ -35,16 +35,6 @@ export function createAppBootstrap({
 				setStatus(error.message, true);
 			});
 		});
-		elements.myFilesButton.addEventListener('click', function() {
-			authController.switchStorageContext('personal').catch(function(error) {
-				setStatus(error.message, true);
-			});
-		});
-		elements.sharedFilesButton.addEventListener('click', function() {
-			authController.switchStorageContext('shared').catch(function(error) {
-				setStatus(error.message, true);
-			});
-		});
 		elements.accountButton.addEventListener('click', function() {
 			authController.openAccountModal();
 		});

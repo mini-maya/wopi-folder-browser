@@ -15,6 +15,8 @@ const {
 	setUserActive,
 	setUserPassword,
 	setUserRole,
+	setUserMounts,
+	getUserMounts,
 	toPublicUser
 } = require('../lib/userStore');
 
@@ -24,7 +26,7 @@ router.use(requireAdmin);
 
 router.get('/users', async function(req, res, next) {
 	try {
-		const users = await listUsers(config.documentRoot);
+		const users = await listUsers(config.stateRoot);
 		res.json({
 			users: users.map(toPublicUser)
 		});
@@ -47,7 +49,7 @@ router.post('/users', async function(req, res, next) {
 		}
 
 		const passwordHash = await hashPassword(plainPassword);
-		const user = await createUser(config.documentRoot, {
+		const user = await createUser(config.stateRoot, {
 			username: username,
 			password: plainPassword,
 			passwordHash: passwordHash,
@@ -68,17 +70,17 @@ router.post('/users', async function(req, res, next) {
 router.patch('/users/:userId', async function(req, res, next) {
 	try {
 		const targetUserId = req.params.userId;
-		const existing = await getUserById(config.documentRoot, targetUserId);
+		const existing = await getUserById(config.stateRoot, targetUserId);
 		if (!existing) {
 			throw createHttpError(404, 'User not found.');
 		}
 
 		let updated = existing;
 		if (req.body.active !== undefined) {
-			updated = await setUserActive(config.documentRoot, targetUserId, req.body.active);
+			updated = await setUserActive(config.stateRoot, targetUserId, req.body.active);
 		}
 		if (req.body.role !== undefined) {
-			updated = await setUserRole(config.documentRoot, targetUserId, req.body.role);
+			updated = await setUserRole(config.stateRoot, targetUserId, req.body.role);
 		}
 
 		res.json({
@@ -94,7 +96,7 @@ router.delete('/users/:userId', async function(req, res, next) {
 		if (req.params.userId === req.auth.user.id) {
 			throw createHttpError(400, 'You cannot delete your own account.');
 		}
-		await deleteUser(config.documentRoot, req.params.userId);
+		await deleteUser(config.stateRoot, req.params.userId);
 		res.status(204).end();
 	} catch (error) {
 		next(error);
@@ -104,7 +106,7 @@ router.delete('/users/:userId', async function(req, res, next) {
 router.post('/users/:userId/reset-password', async function(req, res, next) {
 	try {
 		const targetUserId = req.params.userId;
-		const existing = await getUserById(config.documentRoot, targetUserId);
+		const existing = await getUserById(config.stateRoot, targetUserId);
 		if (!existing) {
 			throw createHttpError(404, 'User not found.');
 		}
@@ -118,7 +120,7 @@ router.post('/users/:userId/reset-password', async function(req, res, next) {
 		}
 		assertValidPassword(plainPassword);
 		const passwordHash = await hashPassword(plainPassword);
-		await setUserPassword(config.documentRoot, targetUserId, passwordHash, true);
+		await setUserPassword(config.stateRoot, targetUserId, passwordHash, true);
 		res.json({
 			generatedPassword: useGeneratedPassword ? plainPassword : null
 		});
@@ -127,29 +129,63 @@ router.post('/users/:userId/reset-password', async function(req, res, next) {
 	}
 });
 
-router.get('/external-acl', async function(req, res, next) {
+router.get('/mounts', async function(req, res, next) {
 	try {
-		const storageManager = req.app.locals.storageManager;
-		await storageManager.ensureInitialized();
-		const externalStorage = storageManager.storages.find((s) => s.id === 'external');
+		const mountRegistry = req.app.locals.mountRegistry;
+		const mounts = mountRegistry.getAll();
 		res.json({
-			allowedUserIds: Array.isArray(externalStorage?.allowedUserIds) ? externalStorage.allowedUserIds : []
+			mounts: mounts.map((mount) => ({
+				id: mount.id,
+				name: mount.name,
+				available: mount.available
+			}))
 		});
 	} catch (error) {
 		next(error);
 	}
 });
 
-router.post('/external-acl', async function(req, res, next) {
+router.put('/users/:userId/mounts', async function(req, res, next) {
 	try {
-		const storageManager = req.app.locals.storageManager;
-		await storageManager.ensureInitialized();
-		const allowedUserIds = Array.isArray(req.body.allowedUserIds)
-			? req.body.allowedUserIds.map((id) => String(id).trim()).filter(Boolean)
+		const targetUserId = req.params.userId;
+		const existing = await getUserById(config.stateRoot, targetUserId);
+		if (!existing) {
+			throw createHttpError(404, 'User not found.');
+		}
+
+		const mountIds = Array.isArray(req.body.mounts)
+			? req.body.mounts.map((id) => String(id).trim()).filter(Boolean)
 			: [];
-		await storageManager.updateExternalAcl(allowedUserIds);
+
+		const mountRegistry = req.app.locals.mountRegistry;
+		for (const mountId of mountIds) {
+			const validation = mountRegistry.validateMount(mountId);
+			if (!validation.valid) {
+				throw createHttpError(400, `Invalid mount: ${mountId}`);
+			}
+		}
+
+		const updated = await setUserMounts(config.stateRoot, targetUserId, mountIds);
 		res.json({
-			allowedUserIds: allowedUserIds
+			user: toPublicUser(updated),
+			mounts: updated.mounts || []
+		});
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.get('/users/:userId/mounts', async function(req, res, next) {
+	try {
+		const targetUserId = req.params.userId;
+		const existing = await getUserById(config.stateRoot, targetUserId);
+		if (!existing) {
+			throw createHttpError(404, 'User not found.');
+		}
+
+		const userMounts = await getUserMounts(config.stateRoot, targetUserId);
+		res.json({
+			mounts: userMounts
 		});
 	} catch (error) {
 		next(error);

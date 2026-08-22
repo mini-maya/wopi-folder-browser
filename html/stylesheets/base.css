@@ -48,6 +48,30 @@ a {
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
+.mount-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  max-width: min(100%, 32rem);
+}
+
+.mount-selector-button {
+  white-space: nowrap;
+}
+
+.mount-selector-button.is-active {
+  background: var(--secondary-bg);
+  color: var(--secondary-text);
+  border: 2px solid var(--primary);
+  padding: calc(0.65rem - 2px) calc(0.95rem - 2px);
+  box-shadow: 0 0 0 1px rgba(58, 109, 255, 0.15);
+}
+
+.mount-selector-button.is-active:hover {
+  background: var(--secondary-bg);
+}
+
 .storage-toggle.is-active,
 .recycle-toggle.is-active {
   background: var(--secondary-bg);

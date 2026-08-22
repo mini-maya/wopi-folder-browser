@@ -10,7 +10,6 @@ RUN npm install --omit=dev
 COPY . .
 
 ENV PORT=3000
-ENV DOCUMENT_ROOT=/documents
 ENV MAX_DOCUMENT_SIZE=100mb
 
 EXPOSE 3000

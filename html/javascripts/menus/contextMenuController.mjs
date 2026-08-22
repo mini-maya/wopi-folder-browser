@@ -2,7 +2,6 @@ export function createContextMenuController({
 	appState,
 	getDocumentById,
 	getBulkSelectedDocuments,
-	getBulkSelectedRecycleEntries,
 	isFolderEntry,
 	onHandleFileAction,
 	onOpenDetailsPanel,
@@ -10,10 +9,6 @@ export function createContextMenuController({
 	onCreateDocumentInDirectory,
 	onCreateFolderInDirectory,
 	onOpenFolderTargetDialog,
-	onSaveAsDocument,
-	onDeleteDocument,
-	onHandleRecycleAction,
-	onHandleRecycleBulkAction,
 	onLoadPage,
 	onHandleBulkAction
 }) {
@@ -55,10 +50,6 @@ export function createContextMenuController({
 	}
 
 	async function handleContextMenuAction(action, fileId) {
-		if (appState.currentView === 'recycle') {
-			await onHandleRecycleAction(action, fileId);
-			return;
-		}
 		const documentEntry = fileId ? getDocumentById(fileId) : null;
 		if (fileId && !documentEntry) {
 			return;
@@ -103,21 +94,8 @@ export function createContextMenuController({
 			case 'new-folder':
 				await onCreateFolderInDirectory(documentEntry?.relativePath || '');
 				return;
-			case 'move':
-				await onOpenFolderTargetDialog('move', fileId);
-				return;
-			case 'copy':
-				await onOpenFolderTargetDialog('copy', fileId);
-				return;
-			case 'save-as':
-				await onSaveAsDocument(fileId);
-				return;
 			case 'download':
 				window.location.href = `/api/files/${encodeURIComponent(fileId)}/download`;
-				return;
-			case 'delete':
-				await onDeleteDocument(fileId);
-				await onLoadPage();
 				return;
 			default:
 				return;
@@ -125,34 +103,6 @@ export function createContextMenuController({
 	}
 
 	async function showContextMenu(fileId, button) {
-		if (appState.currentView === 'recycle') {
-			closeOpenContextMenu();
-			appState.contextMenuFileId = fileId;
-			const entry = (appState.recycleEntries || []).find((recycleEntry) => recycleEntry.id === fileId);
-			if (!entry) {
-				return;
-			}
-			const menu = document.createElement('div');
-			menu.className = 'context-menu';
-			menu.innerHTML = `
-				<button type="button" data-context-action="details" data-file-id="${entry.id}">Details</button>
-				<button type="button" data-context-action="restore" data-file-id="${entry.id}">Restore</button>
-				<div class="context-menu-separator"></div>
-				<button type="button" class="danger" data-context-action="delete-finally" data-file-id="${entry.id}">Delete finally</button>
-			`;
-			for (const menuButton of menu.querySelectorAll('[data-context-action][data-file-id]')) {
-				menuButton.addEventListener('click', function(event) {
-					event.preventDefault();
-					event.stopPropagation();
-					closeOpenContextMenu();
-					onHandleRecycleAction(menuButton.dataset.contextAction, fileId);
-				});
-			}
-			positionContextMenu(menu, button, 220, 180);
-			document.body.appendChild(menu);
-			button.setAttribute('aria-expanded', 'true');
-			return;
-		}
 		const documentEntry = getDocumentById(fileId);
 		if (!documentEntry) {
 			return;
@@ -198,11 +148,6 @@ export function createContextMenuController({
 				<button type="button" data-context-action="new-microsoft-presentation" data-file-id="${documentEntry.id}">New Microsoft PowerPoint presentation</button>
 			</div>` : ''}
 			<button type="button" data-context-action="download" data-file-id="${documentEntry.id}">Download</button>
-			<button type="button" data-context-action="move" data-file-id="${documentEntry.id}">Move to...</button>
-			<button type="button" data-context-action="copy" data-file-id="${documentEntry.id}">Copy to...</button>
-			${isFolder ? '' : `<button type="button" data-context-action="save-as" data-file-id="${documentEntry.id}">Save as...</button>`}
-			<div class="context-menu-separator"></div>
-			<button type="button" class="danger" data-context-action="delete" data-file-id="${documentEntry.id}">Delete ${isFolder ? 'folder' : 'file'}</button>
 		`;
 		for (const menuButton of menu.querySelectorAll('[data-context-action][data-file-id]')) {
 			menuButton.addEventListener('click', function(event) {
@@ -224,33 +169,6 @@ export function createContextMenuController({
 	function showBulkActionsMenu(button) {
 		closeOpenContextMenu();
 
-		if (appState.currentView === 'recycle') {
-			const selectedEntries = getBulkSelectedRecycleEntries();
-			if (!selectedEntries.length) {
-				return;
-			}
-			const menu = document.createElement('div');
-			menu.className = 'context-menu bulk-actions-menu';
-			menu.innerHTML = `
-				<button type="button" data-bulk-recycle-action="restore">Restore selected</button>
-				<div class="context-menu-separator"></div>
-				<button type="button" class="danger" data-bulk-recycle-action="delete-finally">Delete finally selected</button>
-			`;
-			for (const menuButton of menu.querySelectorAll('[data-bulk-recycle-action]')) {
-				menuButton.addEventListener('click', function(event) {
-					event.preventDefault();
-					event.stopPropagation();
-					closeOpenContextMenu();
-					onHandleRecycleBulkAction(menuButton.dataset.bulkRecycleAction);
-				});
-			}
-			positionContextMenu(menu, button, 220, 120);
-			document.body.appendChild(menu);
-			button.setAttribute('aria-expanded', 'true');
-			appState.bulkActionsMenuOpen = true;
-			return;
-		}
-
 		const selectedDocuments = getBulkSelectedDocuments();
 		if (!selectedDocuments.length) {
 			return;
@@ -261,10 +179,6 @@ export function createContextMenuController({
 		menu.innerHTML = `
 			<button type="button" data-bulk-action="favorite">Add to favorites</button>
 			<button type="button" data-bulk-action="download">Download</button>
-			<button type="button" data-bulk-action="move">Move to...</button>
-			<button type="button" data-bulk-action="copy">Copy to...</button>
-			<div class="context-menu-separator"></div>
-			<button type="button" class="danger" data-bulk-action="delete">Delete...</button>
 		`;
 		for (const menuButton of menu.querySelectorAll('[data-bulk-action]')) {
 			menuButton.addEventListener('click', function(event) {
@@ -274,7 +188,7 @@ export function createContextMenuController({
 				onHandleBulkAction(menuButton.dataset.bulkAction);
 			});
 		}
-		positionContextMenu(menu, button, 220, 220);
+		positionContextMenu(menu, button, 220, 160);
 		document.body.appendChild(menu);
 		button.setAttribute('aria-expanded', 'true');
 		appState.bulkActionsMenuOpen = true;

@@ -1,12 +1,12 @@
 {
   "name": "wopi-folder-browser",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "description": "Folder-backed WOPI host for Collabora Online",
   "scripts": {
     "start": "node ./bin/www",
     "setup:admin": "node ./bin/init-admin.js",
-    "test": "node --test test/*.test.js"
+    "test": "WOPI_STATE_ROOT=$(mktemp -d) node --test test/*.test.js"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.8.0",

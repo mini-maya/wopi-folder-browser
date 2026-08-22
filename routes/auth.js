@@ -16,8 +16,7 @@ function mapAuthResponse(req) {
 	if (!req.auth?.authenticated) {
 		return {
 			authenticated: false,
-			user: null,
-			storageId: req.storage?.id || 'documents'
+			user: null
 		};
 	}
 
@@ -29,16 +28,15 @@ function mapAuthResponse(req) {
 			role: req.auth.user.role,
 			active: Boolean(req.auth.user.active),
 			must_change_password: Boolean(req.auth.user.must_change_password)
-		},
-		storageId: req.storage?.id || 'documents'
+		}
 	};
 }
 
 router.get('/setup-status', async function(req, res, next) {
 	try {
 		const [state, adminExists] = await Promise.all([
-			loadInstallState(config.documentRoot),
-			hasAdminUser(config.documentRoot)
+			loadInstallState(config.stateRoot),
+			hasAdminUser(config.stateRoot)
 		]);
 		res.json({
 			completed: state.completed || adminExists
@@ -70,7 +68,7 @@ router.post('/login', async function(req, res, next) {
 			throw createHttpError(400, 'Username and password are required.');
 		}
 
-		const user = await getUserByUsername(config.documentRoot, username);
+		const user = await getUserByUsername(config.stateRoot, username);
 		if (!user || !user.active) {
 			throw createHttpError(401, 'Invalid credentials.');
 		}
@@ -86,8 +84,7 @@ router.post('/login', async function(req, res, next) {
 
 		res.json({
 			authenticated: true,
-			user: toPublicUser(user),
-			storageId: req.storage?.id || 'documents'
+			user: toPublicUser(user)
 		});
 	} catch (error) {
 		next(error);
@@ -108,37 +105,6 @@ router.get('/me', function(req, res) {
 	res.json(mapAuthResponse(req));
 });
 
-router.post('/storage-context', requireAuth, async function(req, res, next) {
-	try {
-		const storageManager = req.app.locals.storageManager;
-		const requestedStorageId = String(req.body.storageId || req.body.context || '').trim();
-		const { storage } = storageManager.resolveOrHttpError(requestedStorageId || 'documents');
-		req.session.selectedStorageId = storage.id;
-		res.json({
-			storageId: storage.id
-		});
-	} catch (error) {
-		next(error);
-	}
-});
-
-router.post('/storage', requireAuth, async function(req, res, next) {
-	try {
-		const storageManager = req.app.locals.storageManager;
-		const requestedStorageId = String(req.body.storageId || '').trim();
-		if (!requestedStorageId) {
-			throw createHttpError(400, 'storageId is required.');
-		}
-		const { storage } = storageManager.resolveOrHttpError(requestedStorageId);
-		req.session.selectedStorageId = storage.id;
-		res.json({
-			storageId: storage.id
-		});
-	} catch (error) {
-		next(error);
-	}
-});
-
 router.post('/change-password', requireAuth, async function(req, res, next) {
 	try {
 		const currentPassword = String(req.body.currentPassword || '');
@@ -154,7 +120,7 @@ router.post('/change-password', requireAuth, async function(req, res, next) {
 		assertValidPassword(newPassword);
 
 		const nextHash = await hashPassword(newPassword);
-		const updated = await setUserPassword(config.documentRoot, req.auth.user.id, nextHash, false);
+		const updated = await setUserPassword(config.stateRoot, req.auth.user.id, nextHash, false);
 		req.auth = { authenticated: true, user: updated };
 		res.status(204).end();
 	} catch (error) {

@@ -22,9 +22,7 @@ export function createDetailsPanelController({
 	onCreateShare,
 	onHandleFileAction,
 	onOpenFolderTargetDialog,
-	onDeleteDocument,
 	onLoadPage,
-	onSaveAsDocument,
 	onViewerOpenDocument,
 	onViewerSubmitLaunchPayload,
 	onCloseOpenContextMenu,
@@ -190,11 +188,6 @@ export function createDetailsPanelController({
 		}
 
 		if (isFolder) {
-			const folderActionButtons = `
-				<button type="button" class="secondary" data-action="details-move" data-file-id="${document.id}">Move</button>
-				<button type="button" class="secondary" data-action="details-copy" data-file-id="${document.id}">Copy</button>
-				<button type="button" class="danger" data-action="details-delete" data-file-id="${document.id}">Delete</button>
-			`;
 			elements.detailsPanelContent.innerHTML = `
 				<div class="details-card">
 					<div class="details-preview">
@@ -209,9 +202,6 @@ export function createDetailsPanelController({
 						<div class="detail-meta-row"><span>Modified</span><strong>${formatDate(document.updatedAt)}</strong></div>
 						<div class="detail-meta-row"><span>Type</span><strong>Folder</strong></div>
 						<div class="detail-meta-row"><span>Path</span><strong>${escapeHtml(document.relativePath)}</strong></div>
-					</div>
-					<div class="details-actions">
-						${folderActionButtons}
 					</div>
 				</div>
 			`;
@@ -878,26 +868,12 @@ export function createDetailsPanelController({
 				}
 				await onCreateShare(fileId);
 				return;
-			case 'details-move':
-				await onOpenFolderTargetDialog('move', fileId);
-				return;
-			case 'details-copy':
-				await onOpenFolderTargetDialog('copy', fileId);
-				return;
 			case 'details-download':
 				if (isFolderEntry(document)) {
 					onSetStatus('Folders cannot be downloaded.', true);
 					return;
 				}
 				window.location.href = `/api/files/${encodeURIComponent(fileId)}/download`;
-				return;
-			case 'details-delete':
-				await onDeleteDocument(fileId);
-				await onLoadPage();
-				closeDetailsPanel();
-				return;
-			case 'details-save-as':
-				await onSaveAsDocument(fileId);
 				return;
 			case 'details-versions':
 				await renderVersionList(fileId);
