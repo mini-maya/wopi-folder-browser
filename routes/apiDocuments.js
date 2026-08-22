@@ -46,10 +46,16 @@ function getDocumentRoot(req) {
 	if (req.mount) {
 		return req.mount.root;
 	}
-	return req.mount?.root || config.mountRoot;
+	if (req.auth?.authenticated) {
+		throw createHttpError(403, 'No mount is assigned to this account.');
+	}
+	return config.mountRoot;
 }
 
 function ensureWritableMount(req) {
+	if (!req.mount && req.auth?.authenticated) {
+		throw createHttpError(403, 'No mount is assigned to this account.');
+	}
 	if (req.mount?.readOnly === true) {
 		throw createHttpError(403, 'Selected mount is read-only.');
 	}
