@@ -132,9 +132,8 @@ export function createContextMenuController({
 			return;
 		}
 		menu.innerHTML = `
-			<button type="button" data-context-action="details" data-file-id="${documentEntry.id}">Details</button>
 			<button type="button" data-context-action="favorite" data-file-id="${documentEntry.id}">${documentEntry.favorite ? 'Remove from favorites' : 'Add to favorites'}</button>
-			${isFolder ? `<button type="button" data-context-action="upload" data-file-id="${documentEntry.id}">Upload...</button>
+			${isFolder ? `
 			<button type="button" data-context-action="new-document" data-file-id="${documentEntry.id}" class="has-submenu">New...</button>
 			<div class="context-menu-submenu hidden" data-submenu="new-document" aria-label="New document submenu">
 				<button type="button" data-context-action="new-folder" data-file-id="${documentEntry.id}">New folder</button>
@@ -146,8 +145,12 @@ export function createContextMenuController({
 				<button type="button" data-context-action="new-microsoft-text" data-file-id="${documentEntry.id}">New Microsoft Word document</button>
 				<button type="button" data-context-action="new-microsoft-spreadsheet" data-file-id="${documentEntry.id}">New Microsoft Excel spreadsheet</button>
 				<button type="button" data-context-action="new-microsoft-presentation" data-file-id="${documentEntry.id}">New Microsoft PowerPoint presentation</button>
-			</div>` : ''}
+			</div>
+			<button type="button" data-context-action="upload" data-file-id="${documentEntry.id}">Upload...</button>
+			` : ''}
 			<button type="button" data-context-action="download" data-file-id="${documentEntry.id}">Download</button>
+			<div class="context-menu-separator"></div>
+			<button type="button" data-context-action="details" data-file-id="${documentEntry.id}">Details</button>
 		`;
 		for (const menuButton of menu.querySelectorAll('[data-context-action][data-file-id]')) {
 			menuButton.addEventListener('click', function(event) {

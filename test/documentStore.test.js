@@ -19,6 +19,7 @@ const {
 const { getCachedThumbnail, resolveThumbnailAbsolutePath, storeThumbnail } = require('../lib/previewStore');
 const { getCommonStateRoot, getContextStateRoot, getStateRoot } = require('../lib/statePaths');
 const { createVersionSnapshot, getVersionEntry } = require('../lib/versionStore');
+const { createPublicShare, listPublicSharesByFile } = require('../lib/shareStore');
 
 const ONE_PIXEL_PNG = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Y8h8AAAAASUVORK5CYII=',
@@ -62,6 +63,23 @@ test('listDocuments keeps registry entries visible when files are missing on dis
 	assert.equal(missingEntry.mimeType, 'application/vnd.oasis.opendocument.text');
 });
 
+test('listDocuments remaps renamed files by md5 when the original path is missing', async function() {
+	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
+	const originalPath = path.join(tempRoot, 'report.odt');
+	await fs.writeFile(originalPath, 'report content');
+
+	const initialDocuments = await listDocuments(tempRoot);
+	const fileId = initialDocuments.find((document) => document.relativePath === 'report.odt').id;
+	const renamedPath = path.join(tempRoot, 'renamed.odt');
+	await fs.rename(originalPath, renamedPath);
+
+	const reloadedDocuments = await listDocuments(tempRoot);
+	const renamedDocument = reloadedDocuments.find((document) => document.relativePath === 'renamed.odt');
+	assert.ok(renamedDocument);
+	assert.equal(renamedDocument.id, fileId);
+	assert.ok(reloadedDocuments.every((document) => document.id !== fileId || document.relativePath === 'renamed.odt'));
+});
+
 test('pruneMissingDocumentEntries removes missing registry-only entries', async function() {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wopi-folder-browser-'));
 	await fs.writeFile(path.join(tempRoot, 'present.odt'), 'present');
@@ -74,15 +92,27 @@ test('pruneMissingDocumentEntries removes missing registry-only entries', async 
 		}
 	}, null, 2), 'utf8');
 
+	const share = await createPublicShare(tempRoot, {
+		resourceId: 'missing-file-id',
+		mountId: 'documents',
+		permission: 'read',
+		createdBy: 'user-1',
+		ownerUserId: 'user-1'
+	});
+	assert.equal((await listPublicSharesByFile(tempRoot, 'missing-file-id')).length, 1);
+
 	const result = await pruneMissingDocumentEntries(tempRoot);
 	assert.equal(result.removed, true);
 	assert.equal(result.missingEntryCount, 1);
 	assert.deepEqual(result.removedFileIds, ['missing-file-id']);
 
 	const registry = JSON.parse(await fs.readFile(path.join(stateRoot, 'file-registry.json'), 'utf8'));
-	assert.deepEqual(registry.entries, {
-		'present-file-id': 'present.odt'
-	});
+	const presentEntry = registry.entries['present-file-id'];
+	assert.equal(presentEntry.path, 'present.odt');
+	assert.match(presentEntry.md5, /^[a-f0-9]{32}$/);
+	assert.equal(presentEntry.size, undefined);
+	assert.equal(presentEntry.mtimeMs, undefined);
+	assert.equal((await listPublicSharesByFile(tempRoot, share.resourceId)).length, 0);
 });
 
 test('getDocumentById resolves a supported document from its file id', async function() {

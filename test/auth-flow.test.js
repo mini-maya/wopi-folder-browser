@@ -394,7 +394,11 @@ test('prune-missing endpoint cleans only missing entries in current context', as
 		assert.deepEqual(requestResult.payload.removedFileIds, ['missing-id']);
 
 		const registry = JSON.parse(await fs.readFile(path.join(contextStateRoot, 'file-registry.json'), 'utf8'));
-		assert.deepEqual(registry.entries, { 'present-id': 'present.odt' });
+		const presentEntry = registry.entries['present-id'];
+		assert.equal(presentEntry.path, 'present.odt');
+		assert.match(presentEntry.md5, /^[a-f0-9]{32}$/);
+		assert.equal(presentEntry.size, undefined);
+		assert.equal(presentEntry.mtimeMs, undefined);
 	} finally {
 		await new Promise((resolve, reject) => instance.server.close((error) => (error ? reject(error) : resolve())));
 		await new Promise((resolve, reject) => instance.collaboraServer.close((error) => (error ? reject(error) : resolve())));
