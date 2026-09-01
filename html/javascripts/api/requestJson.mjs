@@ -1,8 +1,10 @@
+import { getCurrentMountId } from '../state/currentMount.mjs';
+
 export async function requestJson(url, options = {}) {
 	const headers = new Headers(options.headers || {});
-	const match = window.location.pathname.match(/^\/mount\/([^/]+)/);
-	if (match?.[1] && !headers.has('X-Mount-Id')) {
-		headers.set('X-Mount-Id', decodeURIComponent(match[1]));
+	const mountId = getCurrentMountId();
+	if (mountId && !headers.has('X-Mount-Id')) {
+		headers.set('X-Mount-Id', mountId);
 	}
 	const response = await fetch(url, {
 		...options,

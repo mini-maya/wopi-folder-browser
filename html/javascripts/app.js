@@ -16,6 +16,7 @@ import { createViewerLayoutController } from './viewer/layoutController.mjs';
 import { createViewerSessionController } from './viewer/sessionController.mjs';
 import { createAppBootstrap } from './app/bootstrap.mjs';
 import { clearSelectionAndDetailState, resetFilesViewState } from './state/viewState.mjs';
+import { setCurrentMountId } from './state/currentMount.mjs';
 
 const elements = {
 	layout: document.querySelector('#app-layout'),
@@ -68,11 +69,11 @@ const elements = {
 	uploadErrors: document.querySelector('#upload-errors'),
 	uploadCancel: document.querySelector('#upload-cancel'),
 	uploadConfirm: document.querySelector('#upload-confirm'),
-	loginModal: document.querySelector('#login-modal'),
-	loginCancel: document.querySelector('#login-cancel'),
+	loginPage: document.querySelector('#login-page'),
 	loginForm: document.querySelector('#login-form'),
 	loginUsername: document.querySelector('#login-username'),
 	loginPassword: document.querySelector('#login-password'),
+	loginError: document.querySelector('#login-error'),
 	sharePasswordModal: document.querySelector('#share-password-modal'),
 	sharePasswordCancel: document.querySelector('#share-password-cancel'),
 	sharePasswordForm: document.querySelector('#share-password-form'),
@@ -173,19 +174,6 @@ function setStatus(message, isError = false) {
 	elements.statusMessage.classList.toggle('error', isError);
 }
 
-function getMountIdFromLocation() {
-	const match = window.location.pathname.match(/^\/mount\/([^/]+)/);
-	return match?.[1] ? decodeURIComponent(match[1]) : 'documents';
-}
-
-function updateMountPath(mountId) {
-	const encodedMountId = encodeURIComponent(mountId || 'documents');
-	const nextPath = `/mount/${encodedMountId}`;
-	if (window.location.pathname !== nextPath) {
-		window.history.replaceState({}, '', nextPath);
-	}
-}
-
 function renderMountSelector() {
 	if (!elements.mountSelector) {
 		return;
@@ -218,7 +206,7 @@ function renderMountSelector() {
 				return;
 			}
 			appState.currentMountId = mount.id;
-			updateMountPath(mount.id);
+			setCurrentMountId(mount.id);
 			loadPage();
 		});
 		elements.mountSelector.appendChild(button);
@@ -227,6 +215,7 @@ function renderMountSelector() {
 		const fallback = mounts.find((mount) => mount.available !== false && mount.enabled !== false);
 		if (fallback) {
 			appState.currentMountId = fallback.id;
+			setCurrentMountId(fallback.id);
 		}
 	}
 	updateWriteActionButtons();
@@ -597,15 +586,17 @@ async function loadPage() {
 			appState.mounts = [];
 			documentListController.renderEmptyState();
 			authController.renderAuthControls();
-			authController.openLoginModal();
+			authController.showLoginPage();
 			setStatus('');
 			return;
 		}
 
+		authController.hideLoginPage();
 		const mounts = await requestJson('/api/mounts');
-		const selectedMountId = getMountIdFromLocation();
 		appState.mounts = Array.isArray(mounts) ? mounts : [];
-		appState.currentMountId = selectedMountId || config.mountId || 'documents';
+		if (!appState.currentMountId) {
+			appState.currentMountId = config.mountId || 'documents';
+		}
 
 		const accessibleMounts = appState.mounts.filter((mount) => mount.available !== false && mount.enabled !== false);
 		const hasAccessibleMount = accessibleMounts.length > 0;
@@ -613,11 +604,9 @@ async function loadPage() {
 		if (!selectedMount && hasAccessibleMount) {
 			const fallbackMount = accessibleMounts[0];
 			appState.currentMountId = fallbackMount.id;
-			updateMountPath(fallbackMount.id);
-			if (selectedMountId) {
-				setStatus('You do not have access to that mount. Switched to an available mount.', true);
-			}
+			setStatus('You do not have access to that mount. Switched to an available mount.', true);
 		}
+		setCurrentMountId(appState.currentMountId);
 
 		renderMountSelector();
 		if (authState.authenticated && !hasAccessibleMount) {

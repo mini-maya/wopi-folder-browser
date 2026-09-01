@@ -46,10 +46,53 @@ export function createAuthController({
 		modalElement.setAttribute('aria-hidden', 'true');
 	}
 
-	function openLoginModal() {
+	function isSafeRedirectTarget(target) {
+		// Only allow same-origin relative paths (single leading slash) to avoid open redirects.
+		return typeof target === 'string' && /^\/(?!\/)/.test(target);
+	}
+
+	function getRequestedRedirectTarget() {
+		const requested = new URLSearchParams(window.location.search).get('redirect');
+		return isSafeRedirectTarget(requested) ? requested : '/';
+	}
+
+	function clearLoginError() {
+		if (!elements.loginError) {
+			return;
+		}
+		elements.loginError.textContent = '';
+		elements.loginError.classList.add('hidden');
+	}
+
+	function showLoginError(message) {
+		if (!elements.loginError) {
+			setStatus(message, true);
+			return;
+		}
+		elements.loginError.textContent = message;
+		elements.loginError.classList.remove('hidden');
+	}
+
+	function showLoginPage() {
 		elements.loginForm.reset();
-		openModal(elements.loginModal);
+		clearLoginError();
+		elements.layout.classList.add('hidden');
+		elements.loginPage.classList.remove('hidden');
+		elements.loginPage.setAttribute('aria-hidden', 'false');
+		if (!window.location.pathname.startsWith('/auth')) {
+			const redirectTarget = `${window.location.pathname}${window.location.search}`;
+			const query = isSafeRedirectTarget(redirectTarget) && redirectTarget !== '/'
+				? `?redirect=${encodeURIComponent(redirectTarget)}`
+				: '';
+			window.history.replaceState({}, '', `/auth${query}`);
+		}
 		elements.loginUsername.focus();
+	}
+
+	function hideLoginPage() {
+		elements.loginPage.classList.add('hidden');
+		elements.loginPage.setAttribute('aria-hidden', 'true');
+		elements.layout.classList.remove('hidden');
 	}
 
 	function openAccountModal() {
@@ -63,15 +106,23 @@ export function createAuthController({
 		const username = elements.loginUsername.value.trim();
 		const password = elements.loginPassword.value;
 		if (!username || !password) {
-			setStatus('Username and password are required.', true);
+			showLoginError('Username and password are required.');
 			return;
 		}
-		await requestJson('/api/auth/login', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ username: username, password: password })
-		});
-		closeModal(elements.loginModal);
+		try {
+			await requestJson('/api/auth/login', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ username: username, password: password })
+			});
+		} catch (error) {
+			showLoginError(error.message);
+			return;
+		}
+		clearLoginError();
+		hideLoginPage();
+		const redirectTarget = getRequestedRedirectTarget();
+		window.history.replaceState({}, '', redirectTarget);
 		await loadPage();
 		if (appState.auth?.user?.must_change_password) {
 			openAccountModal();
@@ -168,20 +219,12 @@ export function createAuthController({
 							user.mounts = Array.isArray(payload?.mounts) ? payload.mounts : [...nextMounts];
 							if (appState.auth?.user?.id === user.id) {
 								appState.auth.user.mounts = user.mounts.slice();
-								const currentPathMount = window.location.pathname.match(/^\/mount\/([^/]+)/)?.[1];
-								const currentUrlMountId = currentPathMount ? decodeURIComponent(currentPathMount) : null;
-								const stillHasCurrentMount = !currentUrlMountId || user.mounts.some((id) => String(id) === String(currentUrlMountId));
+								const stillHasCurrentMount = !appState.currentMountId || user.mounts.some((id) => String(id) === String(appState.currentMountId));
 								if (!stillHasCurrentMount) {
 									const fallbackMount = Array.isArray(appState.mounts) && appState.mounts.length > 0
 										? appState.mounts.find((mount) => user.mounts.some((id) => String(id) === String(mount.id)))
 										: null;
-									const fallbackMountId = fallbackMount?.id || null;
-									appState.currentMountId = fallbackMountId || 'documents';
-									if (fallbackMountId) {
-										window.history.replaceState({}, '', `/mount/${encodeURIComponent(fallbackMountId)}`);
-									} else {
-										window.history.replaceState({}, '', '/');
-									}
+									appState.currentMountId = fallbackMount?.id || 'documents';
 									await loadPage();
 									return;
 								}
@@ -326,7 +369,8 @@ export function createAuthController({
 	return {
 		renderAuthControls,
 		applyPasswordPolicyToForms,
-		openLoginModal,
+		showLoginPage,
+		hideLoginPage,
 		submitLoginForm,
 		logoutCurrentUser,
 		openAccountModal,

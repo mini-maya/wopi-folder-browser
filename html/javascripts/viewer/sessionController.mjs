@@ -149,11 +149,6 @@ export function createViewerSessionController({
 		elements.viewerTitle.textContent = defaultViewerTitle;
 		elements.viewerSubtitle.textContent = defaultViewerSubtitle;
 		elements.viewerFrame.src = 'about:blank';
-		const currentMountId = appState.currentMountId || 'documents';
-		const mountPath = window.location.pathname.startsWith('/mount/')
-			? window.location.pathname
-			: `/mount/${encodeURIComponent(currentMountId)}`;
-		window.history.replaceState(null, '', mountPath);
 		await reloadPage();
 		setStatus('Closed document.');
 	}

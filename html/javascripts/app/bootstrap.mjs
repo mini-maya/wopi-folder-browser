@@ -28,7 +28,7 @@ export function createAppBootstrap({
 
 		elements.refreshButton.addEventListener('click', onRefreshClick || loadPage);
 		elements.loginButton.addEventListener('click', function() {
-			authController.openLoginModal();
+			authController.showLoginPage();
 		});
 		elements.logoutButton.addEventListener('click', function() {
 			authController.logoutCurrentUser().catch(function(error) {
@@ -108,9 +108,6 @@ export function createAppBootstrap({
 		elements.uploadDropzone.addEventListener('drop', uploadController.handleUploadDrop);
 		elements.uploadCancel.addEventListener('click', uploadController.closeUploadDialog);
 		elements.uploadConfirm.addEventListener('click', uploadController.submitUploadDialog);
-		elements.loginCancel.addEventListener('click', function() {
-			authController.closeModal(elements.loginModal);
-		});
 		elements.loginForm.addEventListener('submit', function(event) {
 			authController.submitLoginForm(event).catch(function(error) {
 				setStatus(error.message, true);

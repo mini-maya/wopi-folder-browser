@@ -402,6 +402,47 @@ a {
   font-size: 0.85rem;
 }
 
+.login-page {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: var(--bg-page);
+  z-index: 1500;
+}
+
+.login-page-card {
+  width: min(24rem, 100%);
+  background: var(--panel-bg);
+  border: 1px solid var(--border-default);
+  border-radius: 18px;
+  box-shadow: var(--panel-shadow);
+  padding: 2rem;
+  text-align: center;
+}
+
+.login-page-card h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.4rem;
+}
+
+.login-page-form {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  text-align: left;
+}
+
+.login-page-form .modal-actions {
+  justify-content: stretch;
+}
+
+.login-page-form .modal-actions button {
+  width: 100%;
+}
+
 .about-modal-card {
   width: min(44rem, 100%);
 }

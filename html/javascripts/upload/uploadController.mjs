@@ -12,8 +12,7 @@ export function createUploadController({
 	onCloseOpenContextMenu
 }) {
 	function getCurrentMountId() {
-		const match = window.location.pathname.match(/^\/mount\/([^/]+)/);
-		return match?.[1] ? decodeURIComponent(match[1]) : null;
+		return appState.currentMountId || null;
 	}
 
 	function getUploadTargetLabel() {

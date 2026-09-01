@@ -305,6 +305,10 @@ These optional variables are read directly by the app at runtime and are not alr
 | `THUMBNAIL_REQUEST_TIMEOUT_MS` | Variable | Preview | Timeout for capabilities/convert requests in ms | `15000` by default. | `15000` |
 | `THUMBNAIL_TOKEN_TTL_MS` | Variable | Preview | Read-only WOPI token lifetime for thumbnail requests | `60000` by default. | `60000` |
 | `THUMBNAIL_DEBUG` | Variable | Preview | Enables detailed thumbnail debug logs (`1` enabled, `0` disabled) | `0` by default. | `0` |
+| `ACTIVITY_MAX_AGE_DAYS` | Variable | Retention | Maximum age of activity log entries in days | Older entries are pruned automatically; the newest entry is always kept. | `180` |
+| `ACTIVITY_MAX_COUNT` | Variable | Retention | Maximum number of activity log entries kept per document context | Entries beyond the limit are pruned automatically; the newest entry is always kept. | `60` |
+| `VERSION_MAX_AGE_DAYS` | Variable | Retention | Maximum age of document versions in days | Older, unlabeled versions (and their stored files) are pruned automatically; the newest and any labeled version are always kept. | `365` |
+| `VERSION_MAX_COUNT` | Variable | Retention | Maximum number of versions kept per document | Unlabeled versions beyond the limit (and their stored files) are pruned automatically; the newest and any labeled version are always kept. | `36` |
 
 > **Important:** Environment changes become active only after container restart or redeploy.
 

@@ -142,14 +142,33 @@ app.get('/health', function(req, res) {
 	res.json({ status: 'ok' });
 });
 
+function isSafeRedirectTarget(target) {
+	// Only allow same-origin relative paths (single leading slash) to avoid open redirects.
+	return typeof target === 'string' && /^\/(?!\/)/.test(target);
+}
+
+function redirectToLogin(req, res) {
+	const redirectTarget = req.originalUrl || req.path || '/';
+	const query = isSafeRedirectTarget(redirectTarget) && redirectTarget !== '/'
+		? `?redirect=${encodeURIComponent(redirectTarget)}`
+		: '';
+	res.redirect(`/auth${query}`);
+}
+
 app.get('/', function(req, res) {
+	if (!req.auth?.authenticated) {
+		redirectToLogin(req, res);
+		return;
+	}
 	res.sendFile(path.join(__dirname, 'html/index.html'));
 });
 
 app.get('/mount/:mountId/thumbnails/:fileId/:version', resolveThumbnailRequest);
 
+// Legacy mount deep-links are no longer supported; redirect to the app root
+// instead of remembering/serving a specific mount from the URL.
 app.get('/mount/*', function(req, res) {
-	res.sendFile(path.join(__dirname, 'html/index.html'));
+	res.redirect(req.auth?.authenticated ? '/' : '/auth');
 });
 
 app.get('/share/:shareId', function(req, res) {
@@ -157,6 +176,11 @@ app.get('/share/:shareId', function(req, res) {
 });
 
 app.get('/auth', function(req, res) {
+	if (req.auth?.authenticated) {
+		const requestedRedirect = typeof req.query?.redirect === 'string' ? req.query.redirect : '';
+		res.redirect(isSafeRedirectTarget(requestedRedirect) ? requestedRedirect : '/');
+		return;
+	}
 	res.sendFile(path.join(__dirname, 'html/index.html'));
 });
 

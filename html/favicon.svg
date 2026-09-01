@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="WOPI Folder Browser">
+  <rect width="64" height="64" rx="14" fill="#2563eb"/>
+  <path d="M14 22c0-2.209 1.791-4 4-4h12l6 6h14c2.209 0 4 1.791 4 4v18c0 2.209-1.791 4-4 4H18c-2.209 0-4-1.791-4-4V22z" fill="#dbeafe"/>
+  <path d="M14 26h36c2.209 0 4 1.791 4 4v2H18c-2.209 0-4 1.791-4 4V26z" fill="#bfdbfe"/>
+  <path d="M24 34h16v4H24z" fill="#2563eb"/>
+  <path d="M24 42h24v4H24z" fill="#60a5fa"/>
+</svg>
