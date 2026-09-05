@@ -21,13 +21,30 @@ a {
 
 .heading-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
   flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
 }
 
 .heading-actions .icon-button {
+  flex: 0 0 auto;
+}
+
+/* Groups the toolbar into clearly separated clusters (mounts / view
+   controls / user account) instead of one continuous row of buttons. */
+.toolbar-group {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.toolbar-divider {
+  width: 1px;
+  align-self: stretch;
+  min-height: 1.75rem;
+  background: var(--border-default);
   flex: 0 0 auto;
 }
 
@@ -60,27 +77,20 @@ a {
   white-space: nowrap;
 }
 
-.mount-selector-button.is-active {
-  background: var(--secondary-bg);
-  color: var(--secondary-text);
-  border: 2px solid var(--primary);
-  padding: calc(0.65rem - 2px) calc(0.95rem - 2px);
-  box-shadow: 0 0 0 1px rgba(58, 109, 255, 0.15);
-}
-
-.mount-selector-button.is-active:hover {
-  background: var(--secondary-bg);
-}
-
+/* Shared "active control" utility: consistent highlight for any toggle-like
+   control (mount tab, recycle toggle, storage toggle, ...). Apply
+   `.is-active` alongside the component's own class. */
+.mount-selector-button.is-active,
 .storage-toggle.is-active,
 .recycle-toggle.is-active {
   background: var(--secondary-bg);
   color: var(--secondary-text);
   border: 2px solid var(--primary);
   padding: calc(0.65rem - 2px) calc(0.95rem - 2px);
-  box-shadow: 0 0 0 1px rgba(58, 109, 255, 0.15);
+  box-shadow: 0 0 0 1px var(--active-ring);
 }
 
+.mount-selector-button.is-active:hover,
 .storage-toggle.is-active:hover,
 .recycle-toggle.is-active:hover {
   background: var(--secondary-bg);
@@ -99,9 +109,58 @@ a {
 
 .auth-controls {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: center;
+}
+
+.user-menu {
+  position: relative;
+}
+
+#user-menu-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+#user-menu-button::after {
+  content: '▾';
+  font-size: 0.8em;
+  line-height: 1;
+}
+
+#user-menu-button[aria-expanded="true"] {
+  background: var(--secondary-bg);
+}
+
+.user-menu-dropdown {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 12rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  box-shadow: var(--panel-shadow);
+  z-index: 1000;
+  padding: var(--space-1);
+}
+
+.user-menu-dropdown button {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-main);
+}
+
+.user-menu-dropdown button:hover {
+  background: var(--surface-subtle);
 }
 
 .theme-label {
@@ -112,13 +171,18 @@ a {
   letter-spacing: 0.05em;
 }
 
-#theme-select {
+#theme-select,
+.mount-selector-dropdown {
   border: 1px solid var(--border-default);
   border-radius: 10px;
   padding: 0.55rem 0.65rem;
   background: var(--panel-bg);
   color: var(--text-main);
   font: inherit;
+}
+
+.mount-selector-dropdown {
+  max-width: min(100%, 18rem);
 }
 
 .eyebrow {

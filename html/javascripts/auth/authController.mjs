@@ -9,14 +9,42 @@ export function createAuthController({
 	loadPage,
 	closeViewer
 }) {
+	function closeUserMenu() {
+		if (!elements.userMenuDropdown || !elements.userMenuButton) {
+			return;
+		}
+		elements.userMenuDropdown.classList.add('hidden');
+		elements.userMenuButton.setAttribute('aria-expanded', 'false');
+	}
+
+	function toggleUserMenu() {
+		if (!elements.userMenuDropdown || !elements.userMenuButton) {
+			return;
+		}
+		const isOpen = !elements.userMenuDropdown.classList.contains('hidden');
+		if (isOpen) {
+			closeUserMenu();
+			return;
+		}
+		elements.userMenuDropdown.classList.remove('hidden');
+		elements.userMenuButton.setAttribute('aria-expanded', 'true');
+	}
+
 	function renderAuthControls() {
 		const authenticated = Boolean(appState.auth?.authenticated);
 		const role = appState.auth?.user?.role || 'user';
 
 		elements.loginButton.classList.toggle('hidden', authenticated);
-		elements.logoutButton.classList.toggle('hidden', !authenticated);
-		elements.accountButton.classList.toggle('hidden', !authenticated);
+		if (elements.userMenu) {
+			elements.userMenu.classList.toggle('hidden', !authenticated);
+		}
+		if (elements.userMenuButton) {
+			elements.userMenuButton.textContent = appState.auth?.user?.username || 'Account';
+		}
 		elements.adminButton.classList.toggle('hidden', !(authenticated && role === 'admin'));
+		if (!authenticated) {
+			closeUserMenu();
+		}
 		if (elements.recycleButton) {
 			elements.recycleButton.classList.toggle('hidden', !authenticated);
 			elements.recycleButton.disabled = !authenticated;
@@ -377,6 +405,8 @@ export function createAuthController({
 		submitAccountForm,
 		openAdminUserManagement,
 		submitAdminCreateUserForm,
-		closeModal
+		closeModal,
+		toggleUserMenu,
+		closeUserMenu
 	};
 }

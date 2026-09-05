@@ -19,20 +19,34 @@ export function createViewerSessionController({
 		return window.location.pathname.startsWith('/share/');
 	}
 
-	function openModal(modalElement) {
-		if (!modalElement) {
+	function hideAppLayout() {
+		if (!elements.layout) {
 			return;
 		}
-		modalElement.classList.remove('hidden');
-		modalElement.setAttribute('aria-hidden', 'false');
+		elements.layout.classList.add('hidden');
 	}
 
-	function closeModal(modalElement) {
-		if (!modalElement) {
+	function revealAppLayout() {
+		if (!elements.layout) {
 			return;
 		}
-		modalElement.classList.add('hidden');
-		modalElement.setAttribute('aria-hidden', 'true');
+		elements.layout.classList.remove('hidden');
+	}
+
+	function showSharePasswordPage() {
+		if (!elements.sharePasswordPage) {
+			return;
+		}
+		elements.sharePasswordPage.classList.remove('hidden');
+		elements.sharePasswordPage.setAttribute('aria-hidden', 'false');
+	}
+
+	function hideSharePasswordPage() {
+		if (!elements.sharePasswordPage) {
+			return;
+		}
+		elements.sharePasswordPage.classList.add('hidden');
+		elements.sharePasswordPage.setAttribute('aria-hidden', 'true');
 	}
 
 	function setSharePasswordModalError(message) {
@@ -44,28 +58,44 @@ export function createViewerSessionController({
 		elements.sharePasswordError.classList.toggle('hidden', !hasMessage);
 	}
 
+	function showSharePasswordFatalError(message) {
+		if (elements.sharePasswordTitle) {
+			elements.sharePasswordTitle.textContent = 'Share link unavailable';
+		}
+		if (elements.sharePasswordDescription) {
+			elements.sharePasswordDescription.classList.add('hidden');
+		}
+		if (elements.sharePasswordField) {
+			elements.sharePasswordField.classList.add('hidden');
+		}
+		if (elements.sharePasswordSubmit) {
+			elements.sharePasswordSubmit.classList.add('hidden');
+		}
+		setSharePasswordModalError(message || 'This share link could not be opened.');
+		showSharePasswordPage();
+	}
+
 	function getShareLaunchErrorCode(error) {
 		return String(error?.payload?.error || error?.message || '').trim();
 	}
 
 	async function promptSharePassword(message) {
-		if (!elements.sharePasswordModal || !elements.sharePasswordForm || !elements.sharePasswordInput || !elements.sharePasswordCancel) {
+		if (!elements.sharePasswordPage || !elements.sharePasswordForm || !elements.sharePasswordInput) {
 			return window.prompt(message || 'Please enter the share password') || null;
 		}
 		elements.sharePasswordForm.reset();
 		setSharePasswordModalError(message || '');
-		openModal(elements.sharePasswordModal);
+		showSharePasswordPage();
 		elements.sharePasswordInput.focus();
 
 		return new Promise((resolve) => {
 			function cleanup() {
 				elements.sharePasswordForm.removeEventListener('submit', onSubmit);
-				elements.sharePasswordCancel.removeEventListener('click', onCancel);
 			}
 
 			function finish(value) {
 				cleanup();
-				closeModal(elements.sharePasswordModal);
+				hideSharePasswordPage();
 				resolve(value);
 			}
 
@@ -79,12 +109,7 @@ export function createViewerSessionController({
 				finish(password);
 			}
 
-			function onCancel() {
-				finish(null);
-			}
-
 			elements.sharePasswordForm.addEventListener('submit', onSubmit);
-			elements.sharePasswordCancel.addEventListener('click', onCancel);
 		});
 	}
 
@@ -100,6 +125,12 @@ export function createViewerSessionController({
 	function setViewerMode(mode) {
 		const isShareSession = isShareSessionPath();
 		const isFullscreenMode = isShareSession || mode === 'edit';
+		if (isShareSession) {
+			// The layout was hidden up-front for anonymous share visitors; only
+			// reveal it once a document actually launched (share-session CSS
+			// below hides the sidebar/table, leaving just the fullscreen viewer).
+			revealAppLayout();
+		}
 		document.body.classList.toggle('share-session', isShareSession);
 		document.body.classList.toggle('editor-fullscreen', isFullscreenMode);
 		if (isShareSession) {
@@ -172,6 +203,9 @@ export function createViewerSessionController({
 			return false;
 		}
 
+		// Keep the folder browser fully hidden for anonymous share visitors
+		// until (and unless) a document actually launches successfully.
+		hideAppLayout();
 		setStatus('Loading public share...');
 		let password = null;
 		const shareToken = encodeURIComponent(pathMatch[1]);
@@ -199,11 +233,13 @@ export function createViewerSessionController({
 						}
 						continue;
 					}
+					showSharePasswordFatalError(error.message);
 					setStatus(error.message, true);
 					return true;
 				}
 			}
 		} catch (error) {
+			showSharePasswordFatalError(error.message || 'Could not open public share.');
 			setStatus(error.message || 'Could not open public share.', true);
 			return true;
 		}

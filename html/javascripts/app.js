@@ -12,10 +12,11 @@ import { createDetailsPanelController } from './documents/detailsPanelController
 import { createFolderTargetController } from './dialogs/folderTargetController.mjs';
 import { createAuthController } from './auth/authController.mjs';
 import { createThemeController } from './ui/themeController.mjs';
+import { createToastController } from './ui/toastController.mjs';
 import { createViewerLayoutController } from './viewer/layoutController.mjs';
 import { createViewerSessionController } from './viewer/sessionController.mjs';
 import { createAppBootstrap } from './app/bootstrap.mjs';
-import { clearSelectionAndDetailState, resetFilesViewState } from './state/viewState.mjs';
+import { resetFilesViewState } from './state/viewState.mjs';
 import { setCurrentMountId } from './state/currentMount.mjs';
 
 const elements = {
@@ -45,6 +46,9 @@ const elements = {
 	accountButton: document.querySelector('#account-button'),
 	loginButton: document.querySelector('#login-button'),
 	logoutButton: document.querySelector('#logout-button'),
+	userMenu: document.querySelector('#user-menu'),
+	userMenuButton: document.querySelector('#user-menu-button'),
+	userMenuDropdown: document.querySelector('#user-menu-dropdown'),
 	aboutButton: document.querySelector('#about-button'),
 	themeSelect: document.querySelector('#theme-select'),
 	searchInput: document.querySelector('#search-input'),
@@ -74,10 +78,13 @@ const elements = {
 	loginUsername: document.querySelector('#login-username'),
 	loginPassword: document.querySelector('#login-password'),
 	loginError: document.querySelector('#login-error'),
-	sharePasswordModal: document.querySelector('#share-password-modal'),
-	sharePasswordCancel: document.querySelector('#share-password-cancel'),
+	sharePasswordPage: document.querySelector('#share-password-page'),
+	sharePasswordTitle: document.querySelector('#share-password-title'),
+	sharePasswordDescription: document.querySelector('#share-password-description'),
+	sharePasswordField: document.querySelector('#share-password-field'),
 	sharePasswordForm: document.querySelector('#share-password-form'),
 	sharePasswordInput: document.querySelector('#share-password-input'),
+	sharePasswordSubmit: document.querySelector('#share-password-submit'),
 	sharePasswordError: document.querySelector('#share-password-error'),
 	accountModal: document.querySelector('#account-modal'),
 	accountCancel: document.querySelector('#account-cancel'),
@@ -104,7 +111,8 @@ const elements = {
 	aboutCancel: document.querySelector('#about-cancel'),
 	aboutVersion: document.querySelector('#about-version'),
 	columnPath: document.querySelector('#column-path'),
-	columnDate: document.querySelector('#column-date')
+	columnDate: document.querySelector('#column-date'),
+	toastContainer: document.querySelector('#toast-container')
 };
 
 const appState = {
@@ -159,6 +167,10 @@ const themeController = createThemeController({
 	themeSelect: elements.themeSelect
 });
 
+const toastController = createToastController({
+	container: elements.toastContainer
+});
+
 const viewerLayoutController = createViewerLayoutController({
 	layout: elements.layout,
 	layoutSplitter: elements.layoutSplitter,
@@ -169,10 +181,28 @@ function isFolderEntry(document) {
 	return Boolean(document?.isDirectory);
 }
 
-function setStatus(message, isError = false) {
+// Persistent, page-level state (e.g. "Loading documents...", "Loaded 12
+// entries.") shown inline in the sidebar. Only used for loadPage()'s own
+// current-view-state messages, which should stay visible/readable in
+// context rather than disappearing like a one-off notification.
+function setInlineStatus(message, isError = false) {
 	elements.statusMessage.textContent = message;
 	elements.statusMessage.classList.toggle('error', isError);
 }
+
+// Transient action feedback (e.g. "Uploaded 3 files.", "Password
+// updated.", "Share link copied to clipboard."). Injected into every
+// sub-controller as `setStatus`/`onSetStatus`, so changing this single
+// function routes all of that feedback through toasts without touching
+// every call site.
+function setStatus(message, isError = false) {
+	toastController.showToast(message, isError ? 'error' : 'info');
+}
+
+// Above this many accessible mounts, tabs stop being practical (would wrap
+// into multiple toolbar rows or overflow) - switch to a compact dropdown
+// instead. Adjust as needed if the typical number of mounts changes.
+const MOUNT_TABS_THRESHOLD = 5;
 
 function renderMountSelector() {
 	if (!elements.mountSelector) {
@@ -187,30 +217,13 @@ function renderMountSelector() {
 		elements.mountSelector.appendChild(empty);
 		return;
 	}
-	for (const mount of mounts) {
-		const button = document.createElement('button');
-		button.type = 'button';
-		button.className = 'secondary mount-selector-button';
-		button.setAttribute('role', 'tab');
-		button.setAttribute('aria-pressed', String(mount.id === appState.currentMountId));
-		button.classList.toggle('is-active', mount.id === appState.currentMountId);
-		button.disabled = mount.available === false || mount.enabled === false;
-		button.textContent = mount.available === false
-			? `${mount.name} (Unavailable)`
-			: `${mount.name}${mount.readOnly ? ' (Read-only)' : ''}`;
-		button.addEventListener('click', function() {
-			if (button.disabled) {
-				return;
-			}
-			if (appState.currentMountId === mount.id) {
-				return;
-			}
-			appState.currentMountId = mount.id;
-			setCurrentMountId(mount.id);
-			loadPage();
-		});
-		elements.mountSelector.appendChild(button);
+
+	if (mounts.length > MOUNT_TABS_THRESHOLD) {
+		renderMountSelectorAsDropdown(mounts);
+	} else {
+		renderMountSelectorAsTabs(mounts);
 	}
+
 	if (!mounts.some((mount) => mount.id === appState.currentMountId && mount.available !== false && mount.enabled !== false)) {
 		const fallback = mounts.find((mount) => mount.available !== false && mount.enabled !== false);
 		if (fallback) {
@@ -219,6 +232,59 @@ function renderMountSelector() {
 		}
 	}
 	updateWriteActionButtons();
+}
+
+function getMountOptionLabel(mount) {
+	return mount.available === false
+		? `${mount.name} (Unavailable)`
+		: `${mount.name}${mount.readOnly ? ' (Read-only)' : ''}`;
+}
+
+function switchToMount(mountId) {
+	if (!mountId || appState.currentMountId === mountId) {
+		return;
+	}
+	appState.currentMountId = mountId;
+	setCurrentMountId(mountId);
+	loadPage();
+}
+
+function renderMountSelectorAsTabs(mounts) {
+	for (const mount of mounts) {
+		const button = document.createElement('button');
+		button.type = 'button';
+		button.className = 'secondary mount-selector-button';
+		button.setAttribute('role', 'tab');
+		button.setAttribute('aria-pressed', String(mount.id === appState.currentMountId));
+		button.classList.toggle('is-active', mount.id === appState.currentMountId);
+		button.disabled = mount.available === false || mount.enabled === false;
+		button.textContent = getMountOptionLabel(mount);
+		button.addEventListener('click', function() {
+			if (button.disabled) {
+				return;
+			}
+			switchToMount(mount.id);
+		});
+		elements.mountSelector.appendChild(button);
+	}
+}
+
+function renderMountSelectorAsDropdown(mounts) {
+	const select = document.createElement('select');
+	select.className = 'mount-selector-dropdown';
+	select.setAttribute('aria-label', 'Mounts');
+	for (const mount of mounts) {
+		const option = document.createElement('option');
+		option.value = mount.id;
+		option.disabled = mount.available === false || mount.enabled === false;
+		option.selected = mount.id === appState.currentMountId;
+		option.textContent = getMountOptionLabel(mount);
+		select.appendChild(option);
+	}
+	select.addEventListener('change', function() {
+		switchToMount(select.value);
+	});
+	elements.mountSelector.appendChild(select);
 }
 
 function updateWriteActionButtons() {
@@ -324,6 +390,13 @@ const authController = createAuthController({
 		appState.documents = [];
 		appState.mounts = [];
 		appState.auth = null;
+		// Reset the remembered mount selection so a different user logging in
+		// afterwards (in the same tab, without a full page reload) doesn't
+		// keep sending the previous user's (possibly inaccessible) mount id
+		// as an X-Mount-Id hint, which would surface a spurious "no access to
+		// mount X" error and leave the stale mount button in the selector.
+		appState.currentMountId = null;
+		setCurrentMountId(null);
 		documentListController.renderCurrentDocumentList();
 	},
 	loadPage: async function() {
@@ -575,7 +648,7 @@ async function handleRefreshClick() {
 }
 
 async function loadPage() {
-	setStatus('Loading documents...');
+	setInlineStatus('Loading documents...');
 	try {
 		const authState = await requestJson('/api/auth/me');
 		const config = await requestJson('/api/config');
@@ -587,7 +660,7 @@ async function loadPage() {
 			documentListController.renderEmptyState();
 			authController.renderAuthControls();
 			authController.showLoginPage();
-			setStatus('');
+			setInlineStatus('');
 			return;
 		}
 
@@ -604,7 +677,7 @@ async function loadPage() {
 		if (!selectedMount && hasAccessibleMount) {
 			const fallbackMount = accessibleMounts[0];
 			appState.currentMountId = fallbackMount.id;
-			setStatus('You do not have access to that mount. Switched to an available mount.', true);
+			setInlineStatus('You do not have access to that mount. Switched to an available mount.', true);
 		}
 		setCurrentMountId(appState.currentMountId);
 
@@ -612,7 +685,7 @@ async function loadPage() {
 		if (authState.authenticated && !hasAccessibleMount) {
 			documentListController.renderEmptyState();
 			authController.renderAuthControls();
-			setStatus('No mounts are assigned to your account.', true);
+			setInlineStatus('No mounts are assigned to your account.', true);
 			return;
 		}
 
@@ -643,13 +716,13 @@ async function loadPage() {
 		documentListController.renderCurrentDocumentList();
 		const count = appState.documents.length;
 		if (config.mountAvailable === false) {
-			setStatus(`${config.mountName || appState.currentMountId} is currently unavailable.`, true);
+			setInlineStatus(`${config.mountName || appState.currentMountId} is currently unavailable.`, true);
 		} else {
-			setStatus(`Loaded ${count} entr${count === 1 ? 'y' : 'ies'}.`);
+			setInlineStatus(`Loaded ${count} entr${count === 1 ? 'y' : 'ies'}.`);
 		}
 	} catch (error) {
 		documentListController.renderEmptyState();
-		setStatus(error.message, true);
+		setInlineStatus(error.message, true);
 	}
 }
 

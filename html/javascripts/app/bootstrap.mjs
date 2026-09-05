@@ -30,15 +30,25 @@ export function createAppBootstrap({
 		elements.loginButton.addEventListener('click', function() {
 			authController.showLoginPage();
 		});
+		if (elements.userMenuButton) {
+			elements.userMenuButton.addEventListener('click', function(event) {
+				event.preventDefault();
+				event.stopPropagation();
+				authController.toggleUserMenu();
+			});
+		}
 		elements.logoutButton.addEventListener('click', function() {
+			authController.closeUserMenu();
 			authController.logoutCurrentUser().catch(function(error) {
 				setStatus(error.message, true);
 			});
 		});
 		elements.accountButton.addEventListener('click', function() {
+			authController.closeUserMenu();
 			authController.openAccountModal();
 		});
 		elements.adminButton.addEventListener('click', function() {
+			authController.closeUserMenu();
 			authController.openAdminUserManagement().catch(function(error) {
 				setStatus(error.message, true);
 			});
@@ -156,6 +166,9 @@ export function createAppBootstrap({
 		document.addEventListener('click', function(event) {
 			if (!event.target.closest('.context-menu') && !event.target.closest('.menu-button')) {
 				closeOpenContextMenu();
+			}
+			if (!event.target.closest('.user-menu')) {
+				authController.closeUserMenu();
 			}
 		});
 		elements.closeDetailsPanelButton.addEventListener('click', detailsPanelController.closeDetailsPanel);

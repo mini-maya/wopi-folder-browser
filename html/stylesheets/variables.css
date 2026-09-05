@@ -19,14 +19,29 @@
   --status-text: #214c9a;
   --status-error-bg: #fff0f0;
   --status-error-text: #b42318;
+  --active-ring: rgba(58, 109, 255, 0.15);
+  --focus-ring: rgba(15, 98, 254, 0.35);
+  --ghost-hover-bg: rgba(15, 98, 254, 0.08);
+
+  /* Spacing scale (use instead of ad-hoc rem values in new/updated CSS) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
 }
 
 body[data-theme="dark"] {
   color-scheme: dark;
   --bg-page: #0f1726;
   --text-main: #e7edf8;
-  --primary: #3a82ff;
-  --primary-hover: #2d6dd8;
+  /* Darkened from the original #3a82ff / #2d6dd8: white button text on
+     the original primary blue only reached ~3.6:1 contrast, below the
+     WCAG AA 4.5:1 minimum for normal text. These shades keep the same
+     hue but pass AA (~4.7:1 / ~6.4:1). */
+  --primary: #2f6fe0;
+  --primary-hover: #2559c2;
   --secondary-bg: #22344f;
   --secondary-text: #e7edf8;
   --danger: #d74b3f;
@@ -43,6 +58,9 @@ body[data-theme="dark"] {
   --status-text: #c9defd;
   --status-error-bg: #5e1f25;
   --status-error-text: #ffd6d8;
+  --active-ring: rgba(47, 111, 224, 0.25);
+  --focus-ring: rgba(47, 111, 224, 0.45);
+  --ghost-hover-bg: rgba(47, 111, 224, 0.14);
 }
 
 body {
@@ -75,10 +93,12 @@ button.icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  min-width: 2.5rem;
-  min-height: 2.5rem;
+  /* 2.75rem = 44px, the WCAG 2.5.5 / mobile-platform minimum recommended
+     touch target size (previously 2.5rem/40px). */
+  width: 2.75rem;
+  height: 2.75rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
   padding: 0;
   border-radius: 10px;
 }
@@ -95,6 +115,27 @@ button.danger {
 
 button.danger:hover {
   background: var(--danger-hover);
+}
+
+/* Tertiary/"ghost" button: for low-emphasis actions (e.g. icon-only
+   toolbar buttons) that shouldn't compete visually with primary/secondary
+   actions. Transparent by default, subtle tint on hover. */
+button.ghost {
+  background: transparent;
+  color: var(--secondary-text);
+}
+
+button.ghost:hover {
+  background: var(--ghost-hover-bg);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .close-icon {

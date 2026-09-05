@@ -24,6 +24,8 @@ services:
 
   collabora:
     image: collabora/code:latest
+    cap_add:
+      - SYS_ADMIN
     environment:
       aliasgroup1: http://app:3000
       extra_params: --o:ssl.enable=false --o:ssl.termination=false --o:welcome.enable=false

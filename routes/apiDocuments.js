@@ -817,7 +817,12 @@ router.delete('/public-shares/:shareId', async function(req, res, next) {
 
 router.get('/shares/:shareId/launch', async function(req, res, next) {
   try {
-    const password = req.get('X-Share-Password') || req.query.password || null;
+    // Only accept the share password via the X-Share-Password header, never
+    // as a query string parameter: query strings end up in server/proxy
+    // access logs, browser history and Referer headers, which would leak the
+    // password even though this endpoint's own request logging only redacts
+    // access_token (see getSafeRequestUrl in app.js).
+    const password = req.get('X-Share-Password') || null;
     const validatedShare = await validatePublicShareAccess(config.stateRoot, req.params.shareId, { password: password });
     if (validatedShare.permission === 'read_write' && !config.allowPublicEditing) {
       throw createHttpError(403, 'Public edit links are disabled.');
