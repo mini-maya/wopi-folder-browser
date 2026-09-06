@@ -1,3 +1,5 @@
+import { getIcon } from '../icons/iconRegistry.mjs';
+
 export function createDocumentListController({
 	elements,
 	appState,
@@ -14,9 +16,9 @@ export function createDocumentListController({
 	formatBytes,
 	onCloseOpenContextMenu,
 	onShowContextMenu,
-	onHandleFileAction,
-	onHandleRecycleAction
+	onHandleFileAction
 }) {
+
 	function filterNestedDocuments(documents) {
 		const folders = documents
 			.filter((document) => isFolderEntry(document))
@@ -41,35 +43,6 @@ export function createDocumentListController({
 	`;
 		elements.selectAllFiles.checked = false;
 		updateBulkActionState([]);
-	}
-
-	function renderRecycleRow(entry) {
-		const isSelected = appState.selectedFileIds.has(entry.id);
-		const previewSrc = buildFilePreviewSvg({ mimeType: entry.mimeType || '' });
-		return `
-		<tr class="${isSelected ? 'selected-row' : ''} tree-file-row" data-file-id="${entry.id}" data-recycle-entry-id="${entry.id}" data-is-recycle-entry="true">
-			<td class="select-cell">
-				<input type="checkbox" class="file-select-checkbox" data-file-id="${entry.id}" ${isSelected ? 'checked' : ''} aria-label="Select ${escapeHtml(entry.originalName || 'recycled file')}">
-			</td>
-			<td class="tree-name-cell">
-				<div class="file-row-main tree-row-main">
-					<span class="tree-toggle-spacer" aria-hidden="true"></span>
-					<img class="file-row-preview" src="${previewSrc}" alt="${escapeHtml(entry.originalName || 'recycled file')} preview">
-					<div>
-						<div class="file-name">${escapeHtml(entry.originalName || 'Recovered file')}</div>
-					</div>
-				</div>
-			</td>
-			<td>${escapeHtml(entry.originalPath || '')}</td>
-			<td>${formatDate(entry.deletedAt)}</td>
-			<td>${entry.versionSize != null ? formatBytes(entry.versionSize) : '—'}</td>
-			<td>
-				<div class="actions actions-inline">
-					<button type="button" class="secondary menu-button" data-action="context-menu" data-file-id="${entry.id}" aria-label="Open recycle actions">⋯</button>
-				</div>
-			</td>
-		</tr>
-	`;
 	}
 
 	function updateBulkActionState(documents) {
@@ -208,7 +181,7 @@ export function createDocumentListController({
 			<td>${sizeLabel}</td>
 			<td>
 				<div class="actions actions-inline">
-					${isFolder || isMissingOnDisk ? '' : '<button type="button" data-action="open" data-mode="edit" data-file-id="'+document.id+'">Open</button><button type="button" class="secondary" data-action="open" data-mode="view" data-file-id="'+document.id+'">View</button>'}
+					${isFolder || isMissingOnDisk ? '' : '<button type="button" data-action="open" data-mode="edit" data-file-id="'+document.id+'">' + getIcon('list-open') + 'Open</button><button type="button" class="secondary" data-action="open" data-mode="view" data-file-id="'+document.id+'">' + getIcon('list-view') + 'View</button>'}
 					<button type="button" class="secondary menu-button" data-action="context-menu" data-file-id="${document.id}" aria-label="Open file actions">⋯</button>
 				</div>
 			</td>
@@ -223,19 +196,6 @@ export function createDocumentListController({
 		if (elements.columnDate) {
 			elements.columnDate.textContent = 'Modified';
 		}
-	}
-
-	function setRecycleListHeaders() {
-		if (elements.columnPath) {
-			elements.columnPath.textContent = 'Original Path';
-		}
-		if (elements.columnDate) {
-			elements.columnDate.textContent = 'Deleted';
-		}
-	}
-
-	function getBulkSelectedRecycleEntries() {
-		return (appState.recycleEntries || []).filter((entry) => appState.selectedFileIds.has(entry.id));
 	}
 
 	function renderFlatDocuments(documents) {
@@ -279,11 +239,6 @@ export function createDocumentListController({
 					return;
 				}
 
-				if (appState.currentView === 'recycle') {
-					onHandleRecycleAction('details', row.dataset.fileId);
-					return;
-				}
-
 				const document = getDocumentById(row.dataset.fileId);
 				if (document?.isDirectory) {
 					toggleFolderExpansion(document.id);
@@ -314,23 +269,7 @@ export function createDocumentListController({
 		}
 	}
 
-	function renderRecycleEntries(entries) {
-		setRecycleListHeaders();
-		if (entries.length === 0) {
-			renderEmptyState('No recycled documents found.');
-			return;
-		}
-		elements.documentsBody.innerHTML = entries.map((entry) => renderRecycleRow(entry)).join('');
-		wireDocumentRows();
-		appState.visibleDocuments = entries;
-		updateBulkActionState(entries);
-	}
-
 	function renderCurrentDocumentList() {
-		if (appState.currentView === 'recycle') {
-			renderRecycleEntries(appState.recycleEntries || []);
-			return;
-		}
 		const query = searchInput.value.trim().toLowerCase();
 		if (query) {
 			const filtered = appState.documents.filter((document) => (
@@ -347,7 +286,6 @@ export function createDocumentListController({
 
 	return {
 		getBulkSelectedDocuments,
-		getBulkSelectedRecycleEntries,
 		renderEmptyState,
 		updateBulkActionState,
 		renderCurrentDocumentList

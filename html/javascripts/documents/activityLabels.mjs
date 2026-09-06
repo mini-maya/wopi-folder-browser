@@ -3,17 +3,9 @@ const ACTIVITY_LABELS = {
 	view: 'Viewed',
 	edit: 'Edited',
 	create: 'Created',
-	recycle: 'Moved to recycle bin',
-	restore: 'Restored',
-	share: 'Shared',
-	move: 'Moved',
-	copy: 'Copied',
-	rename: 'Renamed',
-	download: 'Downloaded',
 	upload: 'Uploaded',
 	'restore-version': 'Restored version',
-	'delete-version': 'Deleted version',
-	delete: 'Deleted'
+	'delete-version': 'Deleted version'
 };
 
 export function getActivityLabel(type) {

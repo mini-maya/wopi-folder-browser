@@ -59,7 +59,7 @@ export function createFolderTargetController({
 		elements.folderPickerModal.classList.remove('hidden');
 		elements.folderPickerModal.setAttribute('aria-hidden', 'false');
 		elements.folderPickerTitle.textContent = title;
-		elements.folderPickerConfirm.textContent = buttonText;
+		elements.folderPickerConfirm.querySelector('svg').nextSibling.textContent = buttonText;
 		elements.folderPickerTarget.closest('.modal-field').classList.toggle('hidden', !needsTargetDirectory);
 		elements.folderPickerName.closest('.modal-field').classList.remove('hidden');
 		if (needsTargetDirectory) {
@@ -107,7 +107,7 @@ export function createFolderTargetController({
 		appState.folderPickerBulkMode = isBulkMode;
 		elements.folderPickerModal.classList.remove('hidden');
 		elements.folderPickerModal.setAttribute('aria-hidden', 'false');
-		elements.folderPickerConfirm.textContent = 'Create';
+		elements.folderPickerConfirm.querySelector('svg').nextSibling.textContent = 'Create';
 		elements.folderPickerTitle.textContent = isBulkMode
 			? 'Create new item in folder'
 			: 'Create new item in folder';

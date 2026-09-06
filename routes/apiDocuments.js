@@ -465,13 +465,6 @@ router.post('/folders', async function(req, res, next) {
       directory: req.body.directory,
       folderName: req.body.folderName
     });
-    await appendActivity(getDocumentRoot(req), {
-      type: 'create-folder',
-      fileId: folder.id,
-      fileName: folder.name,
-      userId: user.id,
-      userName: user.displayName
-    });
     res.status(201).json({ folder: folder });
   } catch (error) {
     next(error);

@@ -104,8 +104,10 @@ button.icon-button {
 }
 
 button.icon-button svg {
-  width: 1rem;
-  height: 1rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-right: 0;
+  vertical-align: middle;
   display: block;
 }
 

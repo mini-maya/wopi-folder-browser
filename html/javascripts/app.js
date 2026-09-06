@@ -18,6 +18,10 @@ import { createViewerSessionController } from './viewer/sessionController.mjs';
 import { createAppBootstrap } from './app/bootstrap.mjs';
 import { resetFilesViewState } from './state/viewState.mjs';
 import { setCurrentMountId } from './state/currentMount.mjs';
+import { initializeIconInjection } from './icons/iconInjector.mjs';
+
+// Initialize icon injection for data-icon attributes in HTML
+initializeIconInjection();
 
 const elements = {
 	layout: document.querySelector('#app-layout'),
@@ -529,9 +533,6 @@ contextMenuController = createContextMenuController({
 	getBulkSelectedDocuments: function() {
 		return documentListController.getBulkSelectedDocuments();
 	},
-	getBulkSelectedRecycleEntries: function() {
-		return documentListController.getBulkSelectedRecycleEntries();
-	},
 	isFolderEntry: isFolderEntry,
 	onHandleFileAction: handleFileAction,
 	onOpenDetailsPanel: function(fileId) {
@@ -690,9 +691,6 @@ async function loadPage() {
 		}
 
 		if (!authState.authenticated) {
-			appState.currentView = 'files';
-		}
-		if (appState.currentView === 'recycle' && !authState.authenticated) {
 			appState.currentView = 'files';
 		}
 		let filesResponse = { documents: [] };

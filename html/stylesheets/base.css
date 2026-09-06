@@ -48,23 +48,6 @@ a {
   flex: 0 0 auto;
 }
 
-.recycle-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.recycle-icon {
-  width: 1rem;
-  height: 1rem;
-  flex: 0 0 auto;
-}
-
-.storage-toggle,
-.recycle-toggle {
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-}
-
 .mount-selector {
   display: flex;
   flex-wrap: wrap;
@@ -75,36 +58,27 @@ a {
 
 .mount-selector-button {
   white-space: nowrap;
-}
-
-/* Shared "active control" utility: consistent highlight for any toggle-like
-   control (mount tab, recycle toggle, storage toggle, ...). Apply
-   `.is-active` alongside the component's own class. */
-.mount-selector-button.is-active,
-.storage-toggle.is-active,
-.recycle-toggle.is-active {
   background: var(--secondary-bg);
-  color: var(--secondary-text);
-  border: 2px solid var(--primary);
-  padding: calc(0.65rem - 2px) calc(0.95rem - 2px);
-  box-shadow: 0 0 0 1px var(--active-ring);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 0.5rem 0.85rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.mount-selector-button.is-active:hover,
-.storage-toggle.is-active:hover,
-.recycle-toggle.is-active:hover {
-  background: var(--secondary-bg);
+.mount-selector-button:hover {
+  background: var(--ghost-hover-bg);
 }
 
-.recycle-toggle .entry-badge {
-  margin-top: 0;
-  min-width: 1.5rem;
-  justify-content: center;
+.mount-selector-button.is-active {
+  background: var(--surface-subtle);
+  border-color: var(--primary);
+  font-weight: 700;
 }
 
-.recycle-toggle.is-active .entry-badge {
-  background: rgba(255, 255, 255, 0.18);
-  color: inherit;
+.mount-selector-button.is-active:hover {
+  background: var(--surface-subtle);
 }
 
 .auth-controls {
@@ -123,6 +97,13 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  background: var(--secondary-bg);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 0.5rem 0.85rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 #user-menu-button::after {
@@ -131,8 +112,14 @@ a {
   line-height: 1;
 }
 
+#user-menu-button:hover {
+  background: var(--ghost-hover-bg);
+}
+
 #user-menu-button[aria-expanded="true"] {
-  background: var(--secondary-bg);
+  background: var(--surface-subtle);
+  border-color: var(--primary);
+  font-weight: 700;
 }
 
 .user-menu-dropdown {
@@ -157,6 +144,28 @@ a {
   border-radius: 8px;
   background: transparent;
   color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.user-menu-dropdown button svg {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+
+button svg {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-right: 0.4rem;
+  vertical-align: bottom;
+}
+
+button svg.close-icon {
+  margin-right: 0;
+  vertical-align: middle;
 }
 
 .user-menu-dropdown button:hover {
@@ -191,11 +200,6 @@ a {
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-}
-
-.intro {
-  margin: 0;
-  color: var(--subtle-text);
 }
 
 .details {
@@ -337,6 +341,15 @@ a {
   border-radius: 8px;
   background: transparent;
   color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.context-menu button svg {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
 }
 
 .context-menu button:hover {

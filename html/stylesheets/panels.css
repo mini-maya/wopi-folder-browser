@@ -57,13 +57,6 @@
   font-size: 0.85rem;
 }
 
-.share-tab-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  align-self: flex-start;
-}
-
 .share-create-form,
 .share-link-card {
   display: grid;
@@ -243,13 +236,20 @@
   border-bottom: none;
 }
 
-.activity-item-dot {
+.activity-item-icon {
   flex-shrink: 0;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--primary);
-  margin-top: 0.3rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.activity-item-icon svg {
+  width: 100%;
+  height: 100%;
+  color: var(--primary);
 }
 
 .activity-item-body {
@@ -351,16 +351,6 @@
   color: var(--text-main);
 }
 
-.details-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.details-actions button {
-  flex: 1 1 8rem;
-}
-
 .version-list {
   display: grid;
   gap: 0.75rem;
@@ -380,7 +370,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 3.5rem;
+  width: 2.9rem;
   height: 3.5rem;
   overflow: hidden;
   border-radius: 10px;

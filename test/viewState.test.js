@@ -11,7 +11,7 @@ test.before(async function() {
 
 test('resetFilesViewState returns to the files view and clears transient selection state', function() {
 	const appState = {
-		currentView: 'recycle',
+		currentView: 'search',
 		selectedFileIds: new Set(['file-1', 'file-2']),
 		activeDetailFileId: 'file-1',
 		detailThumbnailCache: new Map([['file-1', { version: '1', thumbnailUrl: 'thumb' }]]),

@@ -460,8 +460,5 @@ test('activity labels include a read-only view state', async function() {
 
 	assert.equal(getActivityLabel('open'), 'Opened');
 	assert.equal(getActivityLabel('view'), 'Viewed');
-	assert.equal(getActivityLabel('recycle'), 'Moved to recycle bin');
-	assert.equal(getActivityLabel('restore'), 'Restored');
-	assert.equal(getActivityLabel('delete'), 'Deleted');
 	assert.equal(getActivityLabel('unknown-type'), 'unknown-type');
 });

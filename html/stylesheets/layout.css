@@ -269,19 +269,6 @@ tbody tr.selected-row {
   flex: 0 0 auto;
 }
 
-.entry-badge {
-  display: inline-flex;
-  align-items: center;
-  margin-top: 0.35rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  background: var(--surface-subtle);
-  color: var(--muted-text);
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
 .new-document-menu,
 .bulk-actions-menu {
   min-width: 13rem;

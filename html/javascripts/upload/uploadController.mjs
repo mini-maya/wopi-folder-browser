@@ -26,7 +26,7 @@ export function createUploadController({
 		elements.uploadConfirm.disabled = uploadCount === 0 || appState.uploadBusy;
 		elements.uploadChooseButton.disabled = appState.uploadBusy;
 		elements.uploadCancel.disabled = appState.uploadBusy;
-		elements.uploadConfirm.textContent = appState.uploadBusy ? 'Uploading...' : 'Upload';
+		elements.uploadConfirm.querySelector('svg').nextSibling.textContent = appState.uploadBusy ? 'Uploading...' : 'Upload';
 		elements.uploadDropzone.classList.toggle('drag-active', appState.uploadDragActive);
 		elements.uploadDropzone.classList.toggle('is-busy', appState.uploadBusy);
 

@@ -1,3 +1,32 @@
+import { getIcon } from '../icons/iconRegistry.mjs';
+
+const menuIcons = new Proxy({}, {
+	get(target, prop) {
+		return getIcon(prop);
+	}
+});
+
+function createMenuItem(action, fileId, label) {
+	const icon = menuIcons[action] || '';
+	const btn = document.createElement('button');
+	btn.type = 'button';
+	btn.dataset.contextAction = action;
+	if (fileId) {
+		btn.dataset.fileId = fileId;
+	}
+	btn.innerHTML = `${icon}${label}`;
+	return btn;
+}
+
+function createBulkMenuItem(action, label) {
+	const icon = menuIcons[action] || '';
+	const btn = document.createElement('button');
+	btn.type = 'button';
+	btn.dataset.bulkAction = action;
+	btn.innerHTML = `${icon}${label}`;
+	return btn;
+}
+
 export function createContextMenuController({
 	appState,
 	getDocumentById,
@@ -115,43 +144,33 @@ export function createContextMenuController({
 		const menu = document.createElement('div');
 		menu.className = 'context-menu';
 		if (isMissingOnDisk) {
-			menu.innerHTML = `
-				<button type="button" data-context-action="details" data-file-id="${documentEntry.id}">Details</button>
-			`;
-			for (const menuButton of menu.querySelectorAll('[data-context-action][data-file-id]')) {
-				menuButton.addEventListener('click', function(event) {
-					event.preventDefault();
-					event.stopPropagation();
-					closeOpenContextMenu();
-					handleContextMenuAction(menuButton.dataset.contextAction, fileId);
-				});
+			menu.appendChild(createMenuItem('details', documentEntry.id, 'Details'));
+		} else {
+			menu.appendChild(createMenuItem('favorite', documentEntry.id, documentEntry.favorite ? 'Remove from favorites' : 'Add to favorites'));
+			if (isFolder) {
+				const newDocBtn = createMenuItem('new-document', documentEntry.id, 'New...');
+				newDocBtn.classList.add('has-submenu');
+				menu.appendChild(newDocBtn);
+				const submenu = document.createElement('div');
+				submenu.className = 'context-menu-submenu hidden';
+				submenu.dataset.submenu = 'new-document';
+				submenu.setAttribute('aria-label', 'New document submenu');
+				submenu.appendChild(createMenuItem('new-folder', documentEntry.id, 'New folder'));
+				submenu.appendChild(document.createElement('div')).className = 'context-menu-separator';
+				submenu.appendChild(createMenuItem('new-openoffice-text', documentEntry.id, 'New OpenOffice text document'));
+				submenu.appendChild(createMenuItem('new-openoffice-spreadsheet', documentEntry.id, 'New OpenOffice spreadsheet'));
+				submenu.appendChild(createMenuItem('new-openoffice-presentation', documentEntry.id, 'New OpenOffice presentation'));
+				submenu.appendChild(document.createElement('div')).className = 'context-menu-separator';
+				submenu.appendChild(createMenuItem('new-microsoft-text', documentEntry.id, 'New Microsoft Word document'));
+				submenu.appendChild(createMenuItem('new-microsoft-spreadsheet', documentEntry.id, 'New Microsoft Excel spreadsheet'));
+				submenu.appendChild(createMenuItem('new-microsoft-presentation', documentEntry.id, 'New Microsoft PowerPoint presentation'));
+				menu.appendChild(submenu);
+				menu.appendChild(createMenuItem('upload', documentEntry.id, 'Upload...'));
 			}
-			positionContextMenu(menu, button, 220, 96);
-			document.body.appendChild(menu);
-			button.setAttribute('aria-expanded', 'true');
-			return;
+			menu.appendChild(createMenuItem('download', documentEntry.id, 'Download'));
+			menu.appendChild(document.createElement('div')).className = 'context-menu-separator';
+			menu.appendChild(createMenuItem('details', documentEntry.id, 'Details'));
 		}
-		menu.innerHTML = `
-			<button type="button" data-context-action="favorite" data-file-id="${documentEntry.id}">${documentEntry.favorite ? 'Remove from favorites' : 'Add to favorites'}</button>
-			${isFolder ? `
-			<button type="button" data-context-action="new-document" data-file-id="${documentEntry.id}" class="has-submenu">New...</button>
-			<div class="context-menu-submenu hidden" data-submenu="new-document" aria-label="New document submenu">
-				<button type="button" data-context-action="new-folder" data-file-id="${documentEntry.id}">New folder</button>
-				<div class="context-menu-separator"></div>
-				<button type="button" data-context-action="new-openoffice-text" data-file-id="${documentEntry.id}">New OpenOffice text document</button>
-				<button type="button" data-context-action="new-openoffice-spreadsheet" data-file-id="${documentEntry.id}">New OpenOffice spreadsheet</button>
-				<button type="button" data-context-action="new-openoffice-presentation" data-file-id="${documentEntry.id}">New OpenOffice presentation</button>
-				<div class="context-menu-separator"></div>
-				<button type="button" data-context-action="new-microsoft-text" data-file-id="${documentEntry.id}">New Microsoft Word document</button>
-				<button type="button" data-context-action="new-microsoft-spreadsheet" data-file-id="${documentEntry.id}">New Microsoft Excel spreadsheet</button>
-				<button type="button" data-context-action="new-microsoft-presentation" data-file-id="${documentEntry.id}">New Microsoft PowerPoint presentation</button>
-			</div>
-			<button type="button" data-context-action="upload" data-file-id="${documentEntry.id}">Upload...</button>
-			` : ''}
-			<button type="button" data-context-action="download" data-file-id="${documentEntry.id}">Download</button>
-			<div class="context-menu-separator"></div>
-			<button type="button" data-context-action="details" data-file-id="${documentEntry.id}">Details</button>
-		`;
 		for (const menuButton of menu.querySelectorAll('[data-context-action][data-file-id]')) {
 			menuButton.addEventListener('click', function(event) {
 				event.preventDefault();
@@ -179,10 +198,8 @@ export function createContextMenuController({
 
 		const menu = document.createElement('div');
 		menu.className = 'context-menu bulk-actions-menu';
-		menu.innerHTML = `
-			<button type="button" data-bulk-action="favorite">Add to favorites</button>
-			<button type="button" data-bulk-action="download">Download</button>
-		`;
+		menu.appendChild(createBulkMenuItem('favorite', 'Add to favorites'));
+		menu.appendChild(createBulkMenuItem('download', 'Download'));
 		for (const menuButton of menu.querySelectorAll('[data-bulk-action]')) {
 			menuButton.addEventListener('click', function(event) {
 				event.preventDefault();
@@ -209,17 +226,15 @@ export function createContextMenuController({
 		closeOpenContextMenu();
 		const menu = document.createElement('div');
 		menu.className = 'context-menu new-document-menu';
-		menu.innerHTML = `
-			<button type="button" data-context-action="new-folder">New folder</button>
-			<div class="context-menu-separator"></div>
-			<button type="button" data-context-action="new-openoffice-text">New OpenOffice text document</button>
-			<button type="button" data-context-action="new-openoffice-spreadsheet">New OpenOffice spreadsheet</button>
-			<button type="button" data-context-action="new-openoffice-presentation">New OpenOffice presentation</button>
-			<div class="context-menu-separator"></div>
-			<button type="button" data-context-action="new-microsoft-text">New Microsoft Word document</button>
-			<button type="button" data-context-action="new-microsoft-spreadsheet">New Microsoft Excel spreadsheet</button>
-			<button type="button" data-context-action="new-microsoft-presentation">New Microsoft PowerPoint presentation</button>
-		`;
+		menu.appendChild(createMenuItem('new-folder', null, 'New folder'));
+		menu.appendChild(document.createElement('div')).className = 'context-menu-separator';
+		menu.appendChild(createMenuItem('new-openoffice-text', null, 'New OpenOffice text document'));
+		menu.appendChild(createMenuItem('new-openoffice-spreadsheet', null, 'New OpenOffice spreadsheet'));
+		menu.appendChild(createMenuItem('new-openoffice-presentation', null, 'New OpenOffice presentation'));
+		menu.appendChild(document.createElement('div')).className = 'context-menu-separator';
+		menu.appendChild(createMenuItem('new-microsoft-text', null, 'New Microsoft Word document'));
+		menu.appendChild(createMenuItem('new-microsoft-spreadsheet', null, 'New Microsoft Excel spreadsheet'));
+		menu.appendChild(createMenuItem('new-microsoft-presentation', null, 'New Microsoft PowerPoint presentation'));
 		for (const menuButton of menu.querySelectorAll('[data-context-action]')) {
 			menuButton.addEventListener('click', function(event) {
 				event.preventDefault();

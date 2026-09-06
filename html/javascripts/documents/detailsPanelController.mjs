@@ -1,4 +1,5 @@
 import { getActivityLabel } from './activityLabels.mjs';
+import { getIcon } from '../icons/iconRegistry.mjs';
 
 const OFFICE_THUMBNAIL_EXTENSIONS = new Set([
 	'.doc', '.docx', '.odt',
@@ -31,7 +32,7 @@ export function createDetailsPanelController({
 }) {
 	function getPreviewImage(document) {
 		if (!document) {
-			return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><rect width="240" height="160" fill="#e2e8f0"/><text x="120" y="90" text-anchor="middle" font-family="Arial" font-size="36" fill="#475569">FILE</text></svg>');
+			return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(getIcon('file-placeholder'));
 		}
 		if (document.isDirectory) {
 			return buildFolderPictogramSvg({
@@ -224,15 +225,15 @@ export function createDetailsPanelController({
 					</div>
 					<nav class="detail-tabs" aria-label="File detail tabs">
 						<button type="button" class="detail-tab-btn${activeTab === 'share' ? ' active' : ''}" data-tab="share" aria-selected="${activeTab === 'share'}">
-							<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+							${getIcon('share-action')}
 							<span>Share</span>
 						</button>
 						<button type="button" class="detail-tab-btn${activeTab === 'activities' ? ' active' : ''}" data-tab="activities" aria-selected="${activeTab === 'activities'}">
-							<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+							${getIcon('chart-icon')}
 							<span>Activities</span>
 						</button>
 						<button type="button" class="detail-tab-btn${activeTab === 'versions' ? ' active' : ''}" data-tab="versions" aria-selected="${activeTab === 'versions'}">
-							<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+							${getIcon('version-tab')}
 							<span>Versions</span>
 						</button>
 					</nav>
@@ -380,7 +381,7 @@ export function createDetailsPanelController({
 							<input type="text" class="share-url-input" value="${escapeHtml(share.url || '')}" readonly>
 						</label>
 						<div class="share-actions-inline">
-							<button type="button" class="secondary" data-share-action="copy-link">Copy link</button>
+							<button type="button" class="secondary" data-share-action="copy-link">${getIcon('copy-link')}Copy link</button>
 						</div>
 						<div class="share-grid">
 							<label class="share-field">
@@ -430,9 +431,9 @@ export function createDetailsPanelController({
 							<textarea class="share-note-input" rows="2">${escapeHtml(share.note || '')}</textarea>
 						</label>
 						<div class="share-actions-inline">
-							<button type="button" data-share-action="save">Save</button>
-							<button type="button" class="secondary" data-share-action="revoke">Revoke</button>
-							<button type="button" class="danger" data-share-action="delete">Delete</button>
+							<button type="button" data-share-action="save">${getIcon('save')}Save</button>
+							<button type="button" class="secondary" data-share-action="revoke">${getIcon('revoke')}Revoke</button>
+							<button type="button" class="danger" data-share-action="delete">${getIcon('delete')}Delete</button>
 						</div>
 					</div>
 				`;
@@ -488,7 +489,7 @@ export function createDetailsPanelController({
 						</label>
 					</div>
 					<div class="share-actions-inline">
-						<button type="submit">Create public link</button>
+						<button type="submit">${getIcon('copy-link')}Create public link</button>
 					</div>
 				</form>
 				<div class="share-list">
@@ -710,6 +711,12 @@ export function createDetailsPanelController({
 			const allActivities = Array.isArray(payload.activities) ? payload.activities : [];
 			const activities = allActivities.filter((activityEntry) => activityEntry.fileId === fileId);
 
+			const activityIcons = new Proxy({}, {
+				get(target, prop) {
+					return getIcon(prop);
+				}
+			});
+
 			if (!activities.length) {
 				container.innerHTML = '<div class="tab-empty">No activity recorded yet.</div>';
 				return;
@@ -720,9 +727,10 @@ export function createDetailsPanelController({
 					${activities.map(function(activityEntry) {
 						const label = getActivityLabel(activityEntry.type);
 						const countNote = activityEntry.count && activityEntry.count > 1 ? ` <span class="activity-count">×${activityEntry.count}</span>` : '';
+						const icon = activityIcons[activityEntry.type] || activityIcons.create;
 						return `
 							<li class="activity-item">
-								<div class="activity-item-dot" aria-hidden="true"></div>
+								<div class="activity-item-icon" aria-hidden="true">${icon}</div>
 								<div class="activity-item-body">
 									<span class="activity-item-action">${escapeHtml(label)}${countNote}</span>
 									<span class="activity-item-meta">
@@ -779,6 +787,11 @@ export function createDetailsPanelController({
 						return;
 					}
 					const isCurrent = versions[0]?.id === version.id;
+					const icons = new Proxy({}, {
+						get(target, prop) {
+							return getIcon(prop);
+						}
+					});
 					menuEntries.push({ label: 'View', action: 'version-view', danger: false });
 					menuEntries.push({ divider: true });
 					menuEntries.push(isCurrent
@@ -802,7 +815,8 @@ export function createDetailsPanelController({
 							return '<div class="context-menu-separator"></div>';
 						}
 						const accentClass = entry.accent ? 'accent' : '';
-						return `<button type="button" data-context-action="${entry.action}" data-file-id="${fileId}" data-version-id="${version.id}" class="${entry.danger ? 'danger' : ''} ${accentClass}">${entry.label}</button>`;
+						const icon = icons[entry.action] || '';
+						return `<button type="button" data-context-action="${entry.action}" data-file-id="${fileId}" data-version-id="${version.id}" class="${entry.danger ? 'danger' : ''} ${accentClass}">${icon}${entry.label}</button>`;
 					}).join('');
 					for (const menuButton of menu.querySelectorAll('[data-context-action][data-file-id]')) {
 						menuButton.addEventListener('click', function(menuEvent) {

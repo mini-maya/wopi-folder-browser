@@ -45,10 +45,6 @@ export function createAuthController({
 		if (!authenticated) {
 			closeUserMenu();
 		}
-		if (elements.recycleButton) {
-			elements.recycleButton.classList.toggle('hidden', !authenticated);
-			elements.recycleButton.disabled = !authenticated;
-		}
 	}
 
 	function applyPasswordPolicyToForms(minLength) {

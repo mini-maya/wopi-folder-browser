@@ -1,7 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="WOPI Folder Browser">
   <rect width="64" height="64" rx="14" fill="#2563eb"/>
-  <path d="M14 22c0-2.209 1.791-4 4-4h12l6 6h14c2.209 0 4 1.791 4 4v18c0 2.209-1.791 4-4 4H18c-2.209 0-4-1.791-4-4V22z" fill="#dbeafe"/>
-  <path d="M14 26h36c2.209 0 4 1.791 4 4v2H18c-2.209 0-4 1.791-4 4V26z" fill="#bfdbfe"/>
-  <path d="M24 34h16v4H24z" fill="#2563eb"/>
-  <path d="M24 42h24v4H24z" fill="#60a5fa"/>
+  <!-- Folder body: centered vertically -->
+  <path d="M12 20c0-1.657 1.343-3 3-3h14l4 4h16c1.657 0 3 1.343 3 3v22c0 1.657-1.343 3-3 3H15c-1.657 0-3-1.343-3-3V20z" fill="#dbeafe"/>
+  <!-- Folder tab: top-left corner -->
+  <path d="M12 20c0-1.657 1.343-3 3-3h14l4 4H29c-1.657 0-3 1.343-3 3v2H15c-1.657 0-3-1.343-3-3V20z" fill="#bfdbfe"/>
+  <!-- First file line -->
+  <rect x="20" y="31" width="24" height="4" rx="2" fill="#2563eb"/>
+  <!-- Second file line -->
+  <rect x="20" y="39" width="24" height="4" rx="2" fill="#60a5fa"/>
 </svg>
