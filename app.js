@@ -244,7 +244,7 @@ app.get('/mount/:mountId/thumbnails/:fileId/:version', resolveThumbnailRequest);
 
 // Legacy mount deep-links are no longer supported; redirect to the app root
 // instead of remembering/serving a specific mount from the URL.
-app.get('/mount/*', function(req, res) {
+app.get(/^\/mount\//, function(req, res) {
 	res.redirect(req.auth?.authenticated ? '/' : '/auth');
 });
 
